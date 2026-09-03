@@ -33,6 +33,7 @@ export function migrate(raw: Partial<AppState>): AppState {
     decisions: raw.decisions ?? [],
     capacityRecords: raw.capacityRecords ?? [],
     dismissedInsights: raw.dismissedInsights ?? [],
+    deletedIds: raw.deletedIds ?? {},
   };
 
   // Defensive normalisation: fields added after a user's data was written.

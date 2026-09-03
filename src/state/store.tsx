@@ -39,6 +39,7 @@ import { generateWeek } from '../engine/generateWeek';
 import { rebalanceWeek, type DecisionDraft } from '../engine/rebalance';
 import { generateWeeklyReview, assessCapacityReality } from '../engine/weeklyReview';
 import { calculateWeekCapacity } from '../engine/capacity';
+import { useSync, type SyncApi } from './useSync';
 
 /* ------------------------------------------------------------------ */
 /* Actions                                                             */
@@ -95,6 +96,14 @@ function stamped<T>(entity: T): T & BaseFields {
 
 function touch<T extends BaseFields>(entity: T, patch: Partial<T>): T {
   return { ...entity, ...patch, updatedAt: nowISO() };
+}
+
+/** Records a deletion so sync does not resurrect it from the other device. */
+function tombstone(state: AppState, ...ids: ID[]): Record<string, string> {
+  const at = nowISO();
+  const next = { ...state.deletedIds };
+  for (const id of ids) next[id] = at;
+  return next;
 }
 
 function pushDecision(state: AppState, draft: DecisionDraft): PlanningDecision[] {
@@ -160,7 +169,11 @@ export function reducer(state: AppState, action: Action): AppState {
         commitments: state.commitments.map((c) => (c.id === action.id ? touch(c, action.patch) : c)),
       };
     case 'commitment/delete':
-      return { ...state, commitments: state.commitments.filter((c) => c.id !== action.id) };
+      return {
+        ...state,
+        commitments: state.commitments.filter((c) => c.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     /* --- Goals ------------------------------------------------------- */
     case 'goal/add':
@@ -168,7 +181,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'goal/update':
       return { ...state, goals: state.goals.map((g) => (g.id === action.id ? touch(g, action.patch) : g)) };
     case 'goal/delete':
-      return { ...state, goals: state.goals.filter((g) => g.id !== action.id || g.isPrimary) };
+      return {
+        ...state,
+        goals: state.goals.filter((g) => g.id !== action.id || g.isPrimary),
+        deletedIds: tombstone(state, action.id),
+      };
 
     /* --- Topics ------------------------------------------------------ */
     case 'topic/add':
@@ -176,7 +193,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'topic/update':
       return { ...state, topics: state.topics.map((t) => (t.id === action.id ? touch(t, action.patch) : t)) };
     case 'topic/delete':
-      return { ...state, topics: state.topics.filter((t) => t.id !== action.id) };
+      return {
+        ...state,
+        topics: state.topics.filter((t) => t.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     /* --- Tasks ------------------------------------------------------- */
     case 'task/add':
@@ -323,12 +344,20 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
     case 'mock/delete':
-      return { ...state, mocks: state.mocks.filter((m) => m.id !== action.id) };
+      return {
+        ...state,
+        mocks: state.mocks.filter((m) => m.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     case 'practice/add':
       return { ...state, practice: [...state.practice, stamped(action.session) as PracticeSession] };
     case 'practice/delete':
-      return { ...state, practice: state.practice.filter((p) => p.id !== action.id) };
+      return {
+        ...state,
+        practice: state.practice.filter((p) => p.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     case 'error/add':
       return { ...state, errors: [...state.errors, stamped(action.entry) as ErrorEntry] };
@@ -345,7 +374,11 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
     case 'error/delete':
-      return { ...state, errors: state.errors.filter((e) => e.id !== action.id) };
+      return {
+        ...state,
+        errors: state.errors.filter((e) => e.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     /* --- Day logs ----------------------------------------------------- */
     case 'day/log': {
@@ -487,7 +520,7 @@ export function reducer(state: AppState, action: Action): AppState {
 /* Provider                                                            */
 /* ------------------------------------------------------------------ */
 
-interface StoreValue {
+interface StoreValue extends SyncApi {
   state: AppState;
   dispatch: (action: Action) => void;
   loading: boolean;
@@ -580,6 +613,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
+  // Sync adopts a merged state exactly like a load would.
+  const adopt = useCallback((next: AppState) => {
+    dispatch({ type: 'replace', state: next });
+  }, []);
+  const syncApi = useSync(state, loading, adopt);
+
   const exportData = useCallback(() => repository.export(), []);
 
   const importData = useCallback(async (json: string) => {
@@ -603,8 +642,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       exportData,
       importData,
       resetData,
+      ...syncApi,
     }),
-    [state, loading, today, exportData, importData, resetData],
+    [state, loading, today, exportData, importData, resetData, syncApi],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

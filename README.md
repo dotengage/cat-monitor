@@ -21,6 +21,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
 - [Installing as a PWA](#installing-as-a-pwa)
+- [Syncing between devices](#syncing-between-devices)
 - [Backup, export and reset](#backup-export-and-reset)
 - [Configuration: changing topics, sections and targets](#configuration-changing-topics-sections-and-targets)
 - [Testing](#testing)
@@ -44,6 +45,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 | **Weekly review** | Seven questions in, a full recalculation and next week's plan out. |
 | **Analytics** | Plan vs reality, mock trends, completion rates, estimate drift, topic accuracy, error distribution, DILR volume. |
 | **Decision log** | Every automatic change is recorded with its reason, and every one can be overridden. |
+| **Device sync** | Optional. Keeps phone and computer in step through one secret gist in your own GitHub account. Per-record merge, so simultaneous edits on both devices do not overwrite each other. |
 
 ---
 
@@ -91,8 +93,13 @@ src/
     repository.ts          StateRepository interface + local implementation.
     migrate.ts             Forward-only migration of stored state.
     defaultState.ts        Seed profile, settings, goals and topics.
+    sync/
+      merge.ts             Per-record merge with deletion tombstones (pure).
+      gistClient.ts        GitHub Gist API wrapper.
+      syncService.ts       Connect, pull, merge, push orchestration.
   state/
     store.tsx              Reducer + context + debounced persistence.
+    useSync.ts             Background sync loop (debounced push, foreground pull).
     useEngine.ts           Single memoised entry point for derived values.
   ui/
     components/            Card, StatusPill, Stat, CapacityMeter, Modal, TaskCard…
@@ -104,7 +111,7 @@ src/
 
 **Separation is strict.** The engine is pure functions of `AppState` and a date — no clock reads, no storage, no React. That is what makes the planner testable, and it is why the test suite can simulate eight weeks of behaviour in milliseconds.
 
-**Stack:** React 18, TypeScript (strict), Vite 5, Vitest. No state library, no router, no chart library, no UI framework. Total production bundle: ~105 KB gzipped, most of which is React.
+**Stack:** React 18, TypeScript (strict), Vite 5, Vitest. No state library, no router, no chart library, no UI framework. Total production bundle: ~110 KB gzipped, most of which is React.
 
 ---
 
@@ -273,6 +280,34 @@ Service workers require HTTPS (or `localhost`). On GitHub Pages that is automati
 
 ---
 
+## Syncing between devices
+
+Off by default. When enabled, your data lives in **one secret gist in your own GitHub account** — no server, no third-party service, no extra account.
+
+### Setting it up
+
+1. Create a token at **github.com/settings/tokens → Generate new token (classic)**. Tick **`gist`** and nothing else. Copy it.
+2. On your main device: **Settings → Sync across devices → paste the token → Connect**. This creates the gist and uploads your data.
+3. On the second device: paste **the same token**. The app finds the existing gist automatically and pulls everything across.
+
+If the second device has not been set up yet, use **"Restore from another device"** on the first onboarding screen rather than going through setup — setting up separately on two devices creates two of everything.
+
+### When it syncs
+
+Automatically a few seconds after you make a change, when you reopen the app, and every five minutes. Plus **Sync now** in Settings. Sync is never on the critical path: if GitHub is unreachable the app keeps working and retries later.
+
+### How conflicts are resolved
+
+Per record, not per document. Every task, mock, error and log entry carries an `updatedAt`, and the newer edit of *each individual record* wins. Tick tasks off on your phone during the day while your laptop sits open on the Week view, and nothing is lost — "last device to sync" never overwrites the other wholesale.
+
+Deletions are remembered as tombstones (pruned after 90 days) so a record deleted on one device is not resurrected by the other. A device that has never been used adopts the existing data outright instead of merging its own blank seed into it. All of this is covered by tests in `src/data/sync/__tests__/merge.test.ts` — it is the code most capable of losing data, so it is the most heavily tested.
+
+### What to know before enabling it
+
+- **The token is stored on each device** (browser local storage) and is never included in exports or in the synced file. It can only touch Gists — nothing else in your GitHub account.
+- **A "secret" gist is unlisted, not access-controlled.** Anyone who has its 32-character address could read it. Treat the link as private. The gist contains your mock scores, task titles and error notes — no passwords and no contact details.
+- **Disconnecting** removes the token from that device only. Your data stays, on both the device and GitHub.
+
 ## Backup, export and reset
 
 Your data lives in IndexedDB on your device, mirrored to `localStorage` as a recovery path. Nothing is sent anywhere.
@@ -306,7 +341,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-120 tests across 12 files. The planning engine is pure, so the scenarios are exercised directly:
+139 tests across 13 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |
@@ -322,6 +357,8 @@ npm test
 | Mock percentile improves rapidly | Focus shifts to consistency and analysis | `readiness.test.ts` |
 | **Week 1: 18h planned, 11h actual** | **Week 2 planned at ~11h, weakest sections weighted, buffer preserved** | `scenarios.test.ts`, `weeklyReview.test.ts` |
 
+`src/data/sync/__tests__/merge.test.ts` covers two-device merges: simultaneous edits, deletions, tombstone expiry, idempotence, symmetry (both devices converge on the same answer), and a brand-new device adopting existing data rather than duplicating it.
+
 `src/state/__tests__/store.test.ts` walks the same path the UI does — onboarding, completing and missing work, applying a decision, recording and analysing a mock, logging errors, running the review — and asserts on the resulting state.
 
 ---
@@ -334,7 +371,8 @@ Stated plainly, because the app's whole premise is not overstating what it knows
 - **Feasibility labels are judgements from thin evidence.** Three mocks are three data points. The app says so, and refuses to convert them into a probability.
 - **Topic hour estimates are generic**, not personalised, until you have logged enough practice for accuracy data to take over.
 - **No natural-language input yet.** Quick actions cover the common updates (low energy, unexpected commitment, travel, finished early, missed). Free-text parsing would sit behind an interface so an AI API could be added later — the core planner must keep working without one.
-- **No cloud sync.** The persistence layer is a `StateRepository` interface with a single local implementation, so adding sync is a new class rather than a rewrite. It would need auth and conflict resolution.
+- **Sync is eventually consistent, not real-time.** Changes propagate within seconds of an edit settling, or when you reopen the app — not instantly while both devices are open. Two devices editing *the same record* within the same few seconds resolve to the newer edit, so one of the two is discarded by design.
+- **Sync depends on GitHub being reachable.** Offline, the app is unaffected; it reconciles on the next connection.
 - **Notifications are preferences only.** There is no background scheduler; reminders surface in-app.
 - **Charts are deliberately minimal.** Hand-rolled SVG keeps the bundle small; they are not interactive.
 

@@ -8,7 +8,7 @@ import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Collapse, Empty, Field, Modal } from '../ui/components';
 
 export function Settings() {
-  const { state, dispatch, exportData, importData, resetData } = useStore();
+  const { state, dispatch, exportData, importData, resetData, sync, connect, disconnect, syncNow } = useStore();
   const { profile, settings } = state;
   const [message, setMessage] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -302,6 +302,8 @@ export function Settings() {
         )}
       </Card>
 
+      <SyncCard sync={sync} connect={connect} disconnect={disconnect} syncNow={syncNow} />
+
       <Card title="Data">
         <p className="small muted">
           Everything is stored locally on this device (IndexedDB, mirrored to local storage). No account, no server.
@@ -424,5 +426,140 @@ export function Settings() {
         </Modal>
       )}
     </>
+  );
+}
+
+function SyncCard({
+  sync,
+  connect,
+  disconnect,
+  syncNow,
+}: Pick<ReturnType<typeof useStore>, 'sync' | 'connect' | 'disconnect' | 'syncNow'>) {
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const connected = sync.connected;
+
+  const doConnect = async () => {
+    setBusy(true);
+    try {
+      await connect(token);
+      setToken('');
+    } catch {
+      /* the error is surfaced through sync.error */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Sync across devices"
+      action={
+        connected ? (
+          <span className={`status-pill ${sync.phase === 'error' ? 'status-risk' : 'status-ok'}`}>
+            <span className="dot" aria-hidden="true" />
+            {sync.phase === 'syncing' ? 'Syncing' : sync.phase === 'error' ? 'Problem' : 'Connected'}
+          </span>
+        ) : (
+          <span className="status-pill status-neutral">
+            <span className="dot" aria-hidden="true" />
+            Off
+          </span>
+        )
+      }
+    >
+      {!connected ? (
+        <>
+          <p className="small muted">
+            Keeps your phone and computer in step using one secret file in your own GitHub account. No new account, no
+            server. Paste a GitHub token with <strong>Gists</strong> permission below - the same token on every device.
+          </p>
+          <Field
+            label="GitHub token"
+            htmlFor="synctoken"
+            hint="Starts with ghp_ or github_pat_. It is stored only on this device and is never included in exports."
+          >
+            <input
+              id="synctoken"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="ghp_..."
+            />
+          </Field>
+          <button type="button" className="btn primary" disabled={!token.trim() || busy} onClick={doConnect}>
+            {busy ? 'Connecting…' : 'Connect'}
+          </button>
+          {sync.error && <Callout tone="risk">{sync.error}</Callout>}
+          <p className="tiny faint" style={{ marginTop: 10 }}>
+            Create one at github.com/settings/tokens → Generate new token (classic) → tick <strong>gist</strong> only.
+            A secret gist is unlisted rather than access-controlled: anyone holding its 32-character address could read
+            it, so treat the link as private.
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <tbody>
+                <tr>
+                  <td className="muted">Status</td>
+                  <td>
+                    {sync.phase === 'syncing'
+                      ? 'Syncing now…'
+                      : sync.phase === 'error'
+                        ? 'Last attempt failed'
+                        : sync.lastSyncedAt
+                          ? `Synced ${new Date(sync.lastSyncedAt).toLocaleString()}`
+                          : 'Waiting for first sync'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="muted">Storage</td>
+                  <td>GitHub secret gist (your account)</td>
+                </tr>
+                <tr>
+                  <td className="muted">Devices</td>
+                  <td>{sync.devices.length > 0 ? `${sync.devices.length} connected` : 'This device'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {sync.devices.length > 0 && (
+            <ul className="list-reset stack" style={{ marginTop: 10 }}>
+              {sync.devices.map((d) => (
+                <li key={d.id} className="row-between small">
+                  <span>
+                    {d.name}
+                    {d.isThisDevice ? ' — this device' : ''}
+                  </span>
+                  <span className="tiny muted">last seen {new Date(d.lastSeen).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {sync.message && sync.phase !== 'error' && <Callout tone="ok">{sync.message}</Callout>}
+          {sync.error && <Callout tone="risk">{sync.error}</Callout>}
+
+          <div className="btn-group" style={{ marginTop: 10 }}>
+            <button type="button" className="btn" disabled={sync.phase === 'syncing'} onClick={() => void syncNow()}>
+              {sync.phase === 'syncing' ? 'Syncing…' : 'Sync now'}
+            </button>
+            <button type="button" className="btn danger" onClick={disconnect}>
+              Disconnect this device
+            </button>
+          </div>
+          <p className="tiny faint" style={{ marginTop: 8 }}>
+            Syncs automatically a few seconds after you make a change, when you reopen the app, and every five minutes.
+            Records edited on both devices resolve to the newer edit; nothing is silently overwritten wholesale.
+            Disconnecting removes the token from this device only - your data stays.
+          </p>
+        </>
+      )}
+    </Card>
   );
 }

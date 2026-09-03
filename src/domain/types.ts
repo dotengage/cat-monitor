@@ -594,4 +594,11 @@ export interface AppState {
   decisions: PlanningDecision[];
   capacityRecords: CapacityRecord[];
   dismissedInsights: string[];
+  /**
+   * Tombstones: entity id -> ISO timestamp of deletion.
+   *
+   * Without these, syncing would resurrect anything deleted on one device,
+   * because the other device still holds the record. Pruned after 90 days.
+   */
+  deletedIds: Record<string, string>;
 }

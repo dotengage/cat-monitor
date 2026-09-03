@@ -1,0 +1,153 @@
+/**
+ * GitHub Gist storage.
+ *
+ * The whole sync backend is one secret gist in the user's own GitHub account.
+ * No server, no database, no third-party service beyond the one they already
+ * use to host the app. The token needs only the `gist` scope and is stored on
+ * the device, never inside the synced payload.
+ */
+import type { AppState } from '../../domain/types';
+
+const API = 'https://api.github.com';
+const DATA_FILENAME = 'cat-monitor-data.json';
+const GIST_DESCRIPTION = 'CAT Monitor — synced data (do not edit by hand)';
+
+export class GistError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'GistError';
+    this.status = status;
+  }
+}
+
+export interface SyncDevice {
+  name: string;
+  lastSeen: string;
+}
+
+/** What actually gets written to the gist. */
+export interface SyncEnvelope {
+  app: 'cat-monitor';
+  envelopeVersion: 1;
+  updatedAt: string;
+  devices: Record<string, SyncDevice>;
+  state: AppState;
+}
+
+async function request<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      ...init,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new GistError('Could not reach GitHub. Check your internet connection.');
+  }
+
+  if (response.status === 401) {
+    throw new GistError('GitHub rejected the token. It may have been revoked or mistyped.', 401);
+  }
+  if (response.status === 403) {
+    throw new GistError('GitHub refused the request. The token probably lacks Gist permission.', 403);
+  }
+  if (response.status === 404) {
+    throw new GistError('The sync gist could not be found. It may have been deleted on GitHub.', 404);
+  }
+  if (!response.ok) {
+    throw new GistError(`GitHub returned an unexpected error (${response.status}).`, response.status);
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+interface GistFile {
+  filename: string;
+  truncated?: boolean;
+  content?: string;
+  raw_url?: string;
+}
+
+interface GistPayload {
+  id: string;
+  description: string;
+  updated_at: string;
+  files: Record<string, GistFile>;
+}
+
+/** Verifies the token by doing the least privileged thing that needs `gist`. */
+export async function verifyToken(token: string): Promise<void> {
+  await request<GistPayload[]>(token, '/gists?per_page=1');
+}
+
+/** Finds an existing CAT Monitor gist so a second device connects by itself. */
+export async function findDataGist(token: string): Promise<string | undefined> {
+  // 100 per page is plenty; the gist is created by this app and recently used.
+  const gists = await request<GistPayload[]>(token, '/gists?per_page=100');
+  const match = gists.find((g) => Object.keys(g.files ?? {}).includes(DATA_FILENAME));
+  return match?.id;
+}
+
+export async function createDataGist(token: string, envelope: SyncEnvelope): Promise<string> {
+  const created = await request<GistPayload>(token, '/gists', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: GIST_DESCRIPTION,
+      public: false,
+      files: { [DATA_FILENAME]: { content: serialise(envelope) } },
+    }),
+  });
+  return created.id;
+}
+
+export async function readDataGist(token: string, gistId: string): Promise<SyncEnvelope | null> {
+  const gist = await request<GistPayload>(token, `/gists/${gistId}`);
+  const file = gist.files?.[DATA_FILENAME];
+  if (!file) return null;
+
+  let content = file.content ?? '';
+  // GitHub inlines only the first megabyte; larger files must be fetched raw.
+  if (file.truncated && file.raw_url) {
+    const raw = await fetch(file.raw_url);
+    if (!raw.ok) throw new GistError('Could not download the full sync file from GitHub.');
+    content = await raw.text();
+  }
+  if (!content.trim()) return null;
+
+  try {
+    const parsed = JSON.parse(content) as SyncEnvelope;
+    if (parsed?.app !== 'cat-monitor' || !parsed.state) {
+      throw new GistError('The sync file does not look like CAT Monitor data.');
+    }
+    return parsed;
+  } catch (err) {
+    if (err instanceof GistError) throw err;
+    throw new GistError('The sync file is corrupted and could not be read.');
+  }
+}
+
+export async function writeDataGist(token: string, gistId: string, envelope: SyncEnvelope): Promise<void> {
+  await request<GistPayload>(token, `/gists/${gistId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      description: GIST_DESCRIPTION,
+      files: { [DATA_FILENAME]: { content: serialise(envelope) } },
+    }),
+  });
+}
+
+function serialise(envelope: SyncEnvelope): string {
+  return JSON.stringify(envelope, null, 0);
+}
+
+export function gistUrl(gistId: string): string {
+  return `https://gist.github.com/${gistId}`;
+}

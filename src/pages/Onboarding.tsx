@@ -26,8 +26,11 @@ const STEPS = ['Goal', 'Commitments', 'Available time', 'Energy', 'Baseline', 'C
 const emptySection = { score: 0, percentile: 0, attempts: 0, correct: 0, incorrect: 0 };
 
 export function Onboarding() {
-  const { state, dispatch, today } = useStore();
+  const { state, dispatch, today, sync, connect } = useStore();
   const [step, setStep] = useState(0);
+  const [mode, setMode] = useState<'setup' | 'restore'>('setup');
+  const [restoreToken, setRestoreToken] = useState('');
+  const [restoring, setRestoring] = useState(false);
 
   const [profile, setProfile] = useState<Partial<UserProfile>>({
     examDate: state.profile.examDate,
@@ -145,6 +148,52 @@ export function Onboarding() {
         <div style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
       </div>
 
+      {mode === 'restore' ? (
+        <Card title="Restore from another device">
+          <p className="small muted">
+            If you already set this up on another device, paste the same GitHub token here. Your goal, mocks, tasks and
+            error log will be pulled across - there is no need to go through setup again.
+          </p>
+          <Field
+            label="GitHub token"
+            htmlFor="restoretoken"
+            hint="The same token you used on your other device. It is stored only on this device."
+          >
+            <input
+              id="restoretoken"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={restoreToken}
+              onChange={(e) => setRestoreToken(e.target.value)}
+              placeholder="ghp_..."
+            />
+          </Field>
+          {sync.error && <Callout tone="risk">{sync.error}</Callout>}
+          {restoring && !sync.error && <Callout tone="ok">Connected. Pulling your data across…</Callout>}
+          <div className="btn-group">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!restoreToken.trim() || restoring}
+              onClick={async () => {
+                setRestoring(true);
+                try {
+                  await connect(restoreToken);
+                } catch {
+                  setRestoring(false);
+                }
+              }}
+            >
+              {restoring ? 'Connecting…' : 'Connect and restore'}
+            </button>
+            <button type="button" className="btn subtle" onClick={() => setMode('setup')}>
+              Back to setup
+            </button>
+          </div>
+        </Card>
+      ) : (
+      <>
       {step === 0 && (
         <Card title="Your goal">
           <p className="small muted">
@@ -540,6 +589,21 @@ export function Onboarding() {
         </Card>
       )}
 
+      {step === 0 && (
+        <Card title="Already using this on another device?">
+          <p className="small muted">
+            Don't set up twice - pull your existing data across instead. Setting up separately on two devices creates
+            two of everything.
+          </p>
+          <button type="button" className="btn" onClick={() => setMode('restore')}>
+            Restore from another device
+          </button>
+        </Card>
+      )}
+      </>
+      )}
+
+      {mode === 'setup' && (
       <div className="btn-group" style={{ marginTop: 8 }}>
         {step > 0 && (
           <button type="button" className="btn" onClick={() => setStep(step - 1)}>
@@ -556,6 +620,7 @@ export function Onboarding() {
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }

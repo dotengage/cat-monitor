@@ -126,5 +126,6 @@ export function createInitialState(start = todayISO()): AppState {
     decisions: [],
     capacityRecords: [],
     dismissedInsights: [],
+    deletedIds: {},
   };
 }
