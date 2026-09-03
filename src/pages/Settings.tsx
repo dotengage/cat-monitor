@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { COMMITMENT_TYPE_LABELS, DAY_LABELS, ENERGY_LABELS, TIME_WINDOWS } from '../config/catConfig';
 import { formatDate } from '../domain/date';
 import type { EnergyLevel, TimeWindow } from '../domain/types';
+import { getStorageStatus, type StorageStatus } from '../data/db';
 import { repository, type BackupMeta } from '../data/repository';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Collapse, Empty, Field, Modal } from '../ui/components';
@@ -12,10 +13,12 @@ export function Settings() {
   const [message, setMessage] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [backups, setBackups] = useState<BackupMeta[]>([]);
+  const [storage, setStorage] = useState<StorageStatus | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     repository.listBackups().then(setBackups).catch(() => setBackups([]));
+    getStorageStatus().then(setStorage).catch(() => setStorage(null));
   }, []);
 
   const download = async () => {
@@ -302,8 +305,28 @@ export function Settings() {
       <Card title="Data">
         <p className="small muted">
           Everything is stored locally on this device (IndexedDB, mirrored to local storage). No account, no server.
-          Export regularly - clearing browser data will delete it.
+          Data does not sync between devices - use export/import to move it. Clearing browser data deletes it.
         </p>
+        {storage && (
+          <Callout tone={storage.persistent ? 'ok' : 'warn'}>
+            <div className="small">
+              <strong>
+                {storage.persistent
+                  ? 'Storage is durable on this device.'
+                  : 'Storage is best-effort on this device.'}
+              </strong>{' '}
+              {storage.persistent
+                ? 'The browser has agreed not to evict this data automatically.'
+                : 'The browser may evict this data under disk pressure. Installing the app to your home screen usually upgrades it to durable.'}
+            </div>
+            {storage.usageBytes > 0 && (
+              <div className="tiny muted" style={{ marginTop: 4 }}>
+                Using {(storage.usageBytes / 1024).toFixed(0)} KB
+                {storage.quotaBytes > 0 ? ` of roughly ${(storage.quotaBytes / 1024 / 1024).toFixed(0)} MB available` : ''}.
+              </div>
+            )}
+          </Callout>
+        )}
         <div className="btn-group">
           <button type="button" className="btn" onClick={download}>
             Export data (JSON)

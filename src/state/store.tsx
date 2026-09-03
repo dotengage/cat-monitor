@@ -32,6 +32,7 @@ import type {
   WeekPlan,
 } from '../domain/types';
 import { repository } from '../data/repository';
+import { requestPersistentStorage } from '../data/db';
 import { createInitialState } from '../data/defaultState';
 import { applyMissedDecision } from '../engine/missedTask';
 import { generateWeek } from '../engine/generateWeek';
@@ -508,6 +509,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Best-effort: ask the browser not to evict this data under disk pressure.
+    void requestPersistentStorage();
     repository
       .load()
       .then((loaded) => {

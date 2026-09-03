@@ -62,6 +62,48 @@ function lsSet(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Ask the browser to make this origin's storage durable.
+ *
+ * Without it, storage is "best-effort": a browser under disk pressure may
+ * evict it, and iOS Safari evicts data for sites not opened in ~7 days unless
+ * they are installed to the Home Screen. Chrome grants this automatically for
+ * installed PWAs and high-engagement sites. It can only ever help.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
+
+export interface StorageStatus {
+  persistent: boolean;
+  supported: boolean;
+  usageBytes: number;
+  quotaBytes: number;
+}
+
+export async function getStorageStatus(): Promise<StorageStatus> {
+  const fallback: StorageStatus = { persistent: false, supported: false, usageBytes: 0, quotaBytes: 0 };
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage) return fallback;
+    const persistent = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    const estimate = navigator.storage.estimate ? await navigator.storage.estimate() : undefined;
+    return {
+      persistent,
+      supported: Boolean(navigator.storage.persist),
+      usageBytes: estimate?.usage ?? 0,
+      quotaBytes: estimate?.quota ?? 0,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export const kv = {
   async get<T>(key: string): Promise<T | undefined> {
     if (hasIndexedDB()) {
