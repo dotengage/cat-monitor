@@ -1,6 +1,7 @@
 import { SECTION_LABELS } from '../config/catConfig';
 import { daysBetween, formatHours, formatLongDate } from '../domain/date';
 import { weaknessIsMeaningful } from '../engine/derive';
+import { calculateHabitStats } from '../engine/habits';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
 import { Callout, CapacityMeter, Card, Collapse, Empty, Stat, StatGrid, StatusPill } from '../ui/components';
@@ -21,6 +22,7 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
     .reduce((a, t) => a + t.estimateMin, 0);
   const needsDecision = state.tasks.filter((t) => t.needsDecision && t.status === 'missed');
 
+  const habits = calculateHabitStats(state, today);
   const focus = [...todayPlan.mustDo, ...todayPlan.shouldDo].slice(0, 3);
   const biggestRisk =
     conflicts.find((c) => c.severity === 'critical') ??
@@ -91,7 +93,9 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
           </Callout>
         )}
         {focus.length === 0 ? (
-          <Empty>Nothing scheduled for today. Open the Week view to plan, or let the planner generate a week.</Empty>
+          <Empty>
+            Nothing scheduled for today. Open Today to add your own task, or let the planner generate a week.
+          </Empty>
         ) : (
           <div style={{ marginTop: needsDecision.length ? 10 : 0 }}>
             {focus.map((task) => (
@@ -119,6 +123,25 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
           Required pace {formatHours(workload.requiredPerWeekMin, 1)}/week against{' '}
           {formatHours(workload.realisticPerWeekMin, 1)}/week of realistic capacity.
         </p>
+      </Card>
+
+      <Card
+        title="Consistency"
+        action={
+          <button type="button" className="btn small" onClick={() => navigate('log')}>
+            Open Log
+          </button>
+        }
+      >
+        <StatGrid>
+          <Stat label="Current streak" value={habits.currentStreak} sub={habits.currentStreak === 1 ? 'day' : 'days'} />
+          <Stat label="Best streak" value={habits.bestStreak} sub="days" />
+          <Stat
+            label="Today's habits"
+            value={`${habits.today.done}/${habits.today.total}`}
+            sub={`${Math.round(habits.today.score * 100)}%`}
+          />
+        </StatGrid>
       </Card>
 
       {/* 4. This week's outcomes */}

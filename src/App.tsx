@@ -5,6 +5,7 @@ import { CAT } from './pages/CAT';
 import { Errors } from './pages/Errors';
 import { Goals } from './pages/Goals';
 import { Home } from './pages/Home';
+import { Log } from './pages/Log';
 import { Mocks } from './pages/Mocks';
 import { Onboarding } from './pages/Onboarding';
 import { Review } from './pages/Review';
@@ -45,6 +46,7 @@ function Router() {
       {route === 'home' && <Home navigate={navigate} />}
       {route === 'today' && <Today navigate={navigate} />}
       {route === 'week' && <Week />}
+      {route === 'log' && <Log />}
       {route === 'goals' && <Goals />}
       {route === 'cat' && <CAT />}
       {route === 'mocks' && <Mocks />}

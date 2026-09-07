@@ -37,51 +37,51 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0a1020;
-    --surface: #111a2c;
-    --surface-2: #16213a;
-    --surface-3: #1d2b47;
-    --border: #223050;
-    --border-strong: #31406a;
-    --text: #e8eef9;
-    --text-muted: #97a5bd;
-    --text-faint: #6c7c97;
-    --accent: #6d97ff;
-    --accent-soft: #16244a;
-    --ok: #46c98d;
-    --ok-soft: #10301f;
-    --warn: #e5a83c;
-    --warn-soft: #33260e;
-    --risk: #f57a6e;
-    --risk-soft: #37170f;
-    --neutral: #8798b4;
-    --neutral-soft: #1a2439;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --bg: #131313;
+    --surface: #1b1b1b;
+    --surface-2: #232323;
+    --surface-3: #2c2c2c;
+    --border: #2f2f2f;
+    --border-strong: #414141;
+    --text: #ededed;
+    --text-muted: #a3a3a3;
+    --text-faint: #757575;
+    --accent: #7aa2f7;
+    --accent-soft: #232a38;
+    --ok: #5cc98d;
+    --ok-soft: #1a2a20;
+    --warn: #e0a83c;
+    --warn-soft: #2e2617;
+    --risk: #f2796c;
+    --risk-soft: #301b18;
+    --neutral: #9a9a9a;
+    --neutral-soft: #242424;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
 }
 
 :root[data-theme='dark'] {
-  --bg: #0a1020;
-  --surface: #111a2c;
-  --surface-2: #16213a;
-  --surface-3: #1d2b47;
-  --border: #223050;
-  --border-strong: #31406a;
-  --text: #e8eef9;
-  --text-muted: #97a5bd;
-  --text-faint: #6c7c97;
-  --accent: #6d97ff;
-  --accent-soft: #16244a;
-  --ok: #46c98d;
-  --ok-soft: #10301f;
-  --warn: #e5a83c;
-  --warn-soft: #33260e;
-  --risk: #f57a6e;
-  --risk-soft: #37170f;
-  --neutral: #8798b4;
-  --neutral-soft: #1a2439;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --bg: #131313;
+  --surface: #1b1b1b;
+  --surface-2: #232323;
+  --surface-3: #2c2c2c;
+  --border: #2f2f2f;
+  --border-strong: #414141;
+  --text: #ededed;
+  --text-muted: #a3a3a3;
+  --text-faint: #757575;
+  --accent: #7aa2f7;
+  --accent-soft: #232a38;
+  --ok: #5cc98d;
+  --ok-soft: #1a2a20;
+  --warn: #e0a83c;
+  --warn-soft: #2e2617;
+  --risk: #f2796c;
+  --risk-soft: #301b18;
+  --neutral: #9a9a9a;
+  --neutral-soft: #242424;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
@@ -596,3 +596,54 @@ details.collapse > div { padding: 0 12px 12px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---------------- Habit tracker ---------------- */
+
+.habit-table th { text-align: center; }
+.habit-table th:first-child { text-align: left; }
+.habit-table td.num { text-align: center; }
+.habit-table tr.is-today td { background: var(--accent-soft); }
+.habit-table td.hit { color: var(--ok); font-weight: 650; }
+
+.habit-cell {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.habit-cell:hover { border-color: var(--accent); }
+
+.habit-cell.done {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+  font-weight: 700;
+}
+
+tr.is-today td { background: var(--accent-soft); }
+
+/* Day column in the week grid gets its own add button. */
+.day-add {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px dashed var(--border-strong);
+  background: none;
+  color: var(--text-muted);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 4px;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.day-add:hover { border-color: var(--accent); color: var(--accent); }
+
+input[type='range'] { width: 100%; accent-color: var(--accent); }

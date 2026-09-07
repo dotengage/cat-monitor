@@ -16,7 +16,7 @@ import type {
 } from '../domain/types';
 
 export const APP_NAME = 'CAT Monitor';
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 /** Defaults used the first time the app is opened. Editable in Settings. */
 export const DEFAULT_EXAM_DATE = '2026-11-29';
@@ -128,7 +128,15 @@ export const DEFAULT_PLANNING: PlanningParams = {
   errorReviewMin: 8,
   topicRevisionMin: 25,
   atRiskBand: 5,
+  habitStreakThreshold: 0.6,
 };
+
+/**
+ * Default daily habits. These are the small, repeatable inputs that decide
+ * whether the plan is executed at all - deliberately separate from tasks,
+ * which are specific and change every week.
+ */
+export const HABIT_SEEDS = ['DILR sets', 'QA', 'Revision', 'RC', 'VA', 'Reading'];
 
 /** Days-remaining thresholds that decide the current preparation phase. */
 export const PHASE_THRESHOLDS = { foundation: 70, application: 28 };

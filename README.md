@@ -16,6 +16,8 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Product principles](#product-principles)
 - [Architecture](#architecture)
 - [How the adaptive planning engine works](#how-the-adaptive-planning-engine-works)
+- [Planning your own work](#planning-your-own-work)
+- [The daily log and streaks](#the-daily-log-and-streaks)
 - [How the CAT tracker works](#how-the-cat-tracker-works)
 - [How weekly recalculation works](#how-weekly-recalculation-works)
 - [Local development](#local-development)
@@ -38,6 +40,9 @@ It optimises for exam readiness — mock performance, section balance, error red
 | **Capacity model** | `base × energy × commitments × learned realism`, then 20–30% buffer held back. Every factor is shown and configurable. |
 | **Weekly planning** | 3–5 outcomes and a small number of specific, startable tasks that fit inside planned capacity. |
 | **Daily planning** | 1–2 must-do, 1–2 should-do, 1 optional, plus visible unallocated buffer. No hourly timetable. |
+| **Your own tasks** | Write your own work for any day, or repeat it across a week in advance. Regenerating a week never deletes it, and missing it goes through the same decision process. |
+| **Daily log** | What you covered per section and the hours it took. Feeds the capacity model directly. |
+| **Habits & streaks** | Configurable daily habits with a day score, current streak, best streak and consistency. |
 | **Missed-task algorithm** | Every miss gets a fresh decision: reschedule, shorten, combine, postpone, delegate, replace or remove. Nothing carries forward automatically. |
 | **Behaviour learning** | Rolling averages on estimate-vs-actual, time-of-day completion rates, postponement patterns and weekly capacity drift. |
 | **CAT tracking** | VARC / DILR / QA with topic-level accuracy, DILR set-level tracking and miss reasons, and a classified error log. |
@@ -88,6 +93,7 @@ src/
     monthly.ts             Dynamic monthly strategy and milestones.
     weeklyReview.ts        Review output + capacity-reality assessment.
     insights.ts            Plain-language statements of what changed and why.
+    habits.ts              Habit scoring, streaks and the daily study log.
   data/                    Persistence boundary.
     db.ts                  IndexedDB key-value store, localStorage fallback.
     repository.ts          StateRepository interface + local implementation.
@@ -105,7 +111,7 @@ src/
     components/            Card, StatusPill, Stat, CapacityMeter, Modal, TaskCard…
     charts/                Hand-rolled SVG charts (no charting library).
     layout/Shell.tsx       Hash router, sidebar (desktop), bottom nav (mobile).
-  pages/                   Home, Today, Week, Goals, CAT, Mocks, Errors,
+  pages/                   Home, Today, Week, Log, Goals, CAT, Mocks, Errors,
                            Review, Analytics, Settings, Onboarding.
 ```
 
@@ -185,6 +191,28 @@ Every decision carries the remaining workload, the available capacity and a verd
 - **Capacity drift** — four-week completion ratios decide whether planned volume goes down (reality is lower) or up (estimates were conservative).
 
 ---
+
+## Planning your own work
+
+The generated plan is a starting point, not a cage.
+
+- **Add a task for today** from the Today page, or **for any day** from the Week page (each day has its own `+ Add`).
+- **Plan ahead** with the repeat option: the same task can be dropped onto the next 3, 5, 7 or 14 days. Each copy is a real, separate task, so one bad day does not poison the rest.
+- **Your tasks are yours.** They are marked `origin: user`, which means regenerating a week leaves them untouched while auto-generated filler is replaced.
+- **Missing one behaves identically** to missing generated work: the nine-step decision runs, proposes reschedule / shorten / combine / postpone / remove with its reasoning, and you can always override with *Keep it*, *Send to backlog* or *Remove*.
+- The **importance** you choose is what decides that outcome — critical work is protected, optional work is the first thing dropped when the week is full.
+
+## The daily log and streaks
+
+Two things live on the **Log** page, deliberately separate from tasks:
+
+**Study log.** Per day, per section: what you covered and how many hours it took, plus a note. Totals and per-section splits are computed for the last 14 / 30 / 90 days. The hours are not decoration — they become that day's focused time, which feeds the realism factor in the capacity model. Log honestly and next week's plan gets closer to what you can actually do.
+
+**Habits and streaks.** A short, configurable list of daily inputs (DILR sets, QA, Revision, RC, VA, Reading by default). Tick them on Today or in the grid on Log. Each day gets a score; a day counts towards the streak once you hit the threshold, which defaults to **60%** rather than 100% — a streak that breaks the first time you skip one thing measures perfectionism, not consistency. The threshold is adjustable.
+
+An unfilled *today* does not break the streak; a filled-in today that missed the threshold does. Current streak, best streak and consistency across logged days are all shown.
+
+Habits and tasks are kept apart on purpose: tasks are specific and change weekly, habits are the same few things every day. Mixing them would let one heavy task day hide a week of skipped reading.
 
 ## How the CAT tracker works
 
@@ -341,7 +369,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-139 tests across 13 files. The planning engine is pure, so the scenarios are exercised directly:
+155 tests across 14 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |
@@ -374,6 +402,7 @@ Stated plainly, because the app's whole premise is not overstating what it knows
 - **Sync is eventually consistent, not real-time.** Changes propagate within seconds of an edit settling, or when you reopen the app — not instantly while both devices are open. Two devices editing *the same record* within the same few seconds resolve to the newer edit, so one of the two is discarded by design.
 - **Sync depends on GitHub being reachable.** Offline, the app is unaffected; it reconciles on the next connection.
 - **Notifications are preferences only.** There is no background scheduler; reminders surface in-app.
+- **Streaks are a consistency signal, not a goal.** The app deliberately does not gamify them: no badges, no celebration, no penalty copy. A broken streak is reported as information.
 - **Charts are deliberately minimal.** Hand-rolled SVG keeps the bundle small; they are not interactive.
 
 ---

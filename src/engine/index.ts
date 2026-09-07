@@ -5,6 +5,7 @@ export * from './derive';
 export * from './estimation';
 export * from './generateWeek';
 export * from './goalStatus';
+export * from './habits';
 export * from './insights';
 export * from './missedTask';
 export * from './monthly';

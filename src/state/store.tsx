@@ -18,6 +18,8 @@ import type {
   DayLog,
   ErrorEntry,
   Goal,
+  Habit,
+  HabitDay,
   ID,
   ISODate,
   MissedTaskDecision,
@@ -25,6 +27,7 @@ import type {
   PlanningDecision,
   PracticeSession,
   ReviewAnswers,
+  SectionKey,
   Settings,
   Task,
   Topic,
@@ -39,6 +42,7 @@ import { generateWeek } from '../engine/generateWeek';
 import { rebalanceWeek, type DecisionDraft } from '../engine/rebalance';
 import { generateWeeklyReview, assessCapacityReality } from '../engine/weeklyReview';
 import { calculateWeekCapacity } from '../engine/capacity';
+import { studyMinutesTotal } from '../engine/habits';
 import { useSync, type SyncApi } from './useSync';
 
 /* ------------------------------------------------------------------ */
@@ -79,6 +83,12 @@ export type Action =
   | { type: 'error/update'; id: ID; patch: Partial<ErrorEntry> }
   | { type: 'error/delete'; id: ID }
   | { type: 'day/log'; log: Omit<DayLog, keyof BaseFields> }
+  | { type: 'day/study'; date: ISODate; section: SectionKey; minutes: number; topics: string }
+  | { type: 'day/note'; date: ISODate; note: string }
+  | { type: 'habit/toggle'; date: ISODate; habitId: ID; done: boolean }
+  | { type: 'habit/add'; name: string }
+  | { type: 'habit/update'; id: ID; patch: Partial<Habit> }
+  | { type: 'habit/delete'; id: ID }
   | { type: 'week/generate'; weekStart: ISODate; today: ISODate; targetPlannedMin?: number }
   | { type: 'week/rebalance'; weekStart: ISODate; today: ISODate }
   | { type: 'week/update'; id: ID; patch: Partial<WeekPlan> }
@@ -388,6 +398,101 @@ export function reducer(state: AppState, action: Action): AppState {
         : [...state.dayLogs, stamped(action.log) as DayLog];
       return { ...state, dayLogs };
     }
+
+    /* --- Daily study log + habits ------------------------------------- */
+    case 'day/study': {
+      const existing = state.dayLogs.find((d) => d.date === action.date);
+      const study = {
+        ...(existing?.study ?? {}),
+        [action.section]: { minutes: Math.max(0, action.minutes), topics: action.topics },
+      };
+      // Logged study is real evidence of capacity, so it updates focusedMin
+      // and therefore the planner's realism factor.
+      const focusedMin = studyMinutesTotal(study);
+      if (existing) {
+        return {
+          ...state,
+          dayLogs: state.dayLogs.map((d) => (d.id === existing.id ? touch(d, { study, focusedMin }) : d)),
+        };
+      }
+      return {
+        ...state,
+        dayLogs: [
+          ...state.dayLogs,
+          stamped({
+            date: action.date,
+            energy: 3 as const,
+            estimatedAvailableMin: 0,
+            focusedMin,
+            unexpectedCommitments: '',
+            study,
+          }) as DayLog,
+        ],
+      };
+    }
+
+    case 'day/note': {
+      const existing = state.dayLogs.find((d) => d.date === action.date);
+      if (existing) {
+        return { ...state, dayLogs: state.dayLogs.map((d) => (d.id === existing.id ? touch(d, { note: action.note }) : d)) };
+      }
+      return {
+        ...state,
+        dayLogs: [
+          ...state.dayLogs,
+          stamped({
+            date: action.date,
+            energy: 3 as const,
+            estimatedAvailableMin: 0,
+            focusedMin: 0,
+            unexpectedCommitments: '',
+            note: action.note,
+          }) as DayLog,
+        ],
+      };
+    }
+
+    case 'habit/toggle': {
+      const existing = state.habitDays.find((d) => d.date === action.date);
+      if (existing) {
+        return {
+          ...state,
+          habitDays: state.habitDays.map((d) =>
+            d.id === existing.id ? touch(d, { marks: { ...d.marks, [action.habitId]: action.done } }) : d,
+          ),
+        };
+      }
+      return {
+        ...state,
+        habitDays: [
+          ...state.habitDays,
+          stamped({ date: action.date, marks: { [action.habitId]: action.done } }) as HabitDay,
+        ],
+      };
+    }
+
+    case 'habit/add':
+      return {
+        ...state,
+        habits: [
+          ...state.habits,
+          stamped({
+            name: action.name,
+            order: state.habits.reduce((max, h) => Math.max(max, h.order), -1) + 1,
+            active: true,
+          }) as Habit,
+        ],
+      };
+
+    case 'habit/update':
+      return { ...state, habits: state.habits.map((h) => (h.id === action.id ? touch(h, action.patch) : h)) };
+
+    case 'habit/delete':
+      return {
+        ...state,
+        habits: state.habits.filter((h) => h.id !== action.id),
+        deletedIds: tombstone(state, action.id),
+      };
 
     /* --- Weeks -------------------------------------------------------- */
     case 'week/generate': {

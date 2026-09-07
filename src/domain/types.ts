@@ -160,6 +160,13 @@ export interface Commitment extends Entity {
   notes?: string;
 }
 
+export interface SectionStudyEntry {
+  /** Minutes spent on this section today. */
+  minutes: number;
+  /** What was actually covered, in the user's own words. */
+  topics: string;
+}
+
 export interface DayLog extends Entity {
   date: ISODate;
   energy: EnergyLevel;
@@ -168,6 +175,31 @@ export interface DayLog extends Entity {
   /** What they actually spent focused, in minutes. */
   focusedMin: number;
   unexpectedCommitments: string;
+  note?: string;
+  /**
+   * The daily study log: what was covered per section and for how long.
+   * When present, `focusedMin` is kept in step with the sum, so logging
+   * study also feeds the capacity model's realism factor.
+   */
+  study?: Partial<Record<SectionKey, SectionStudyEntry>>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Habits and streaks                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface Habit extends Entity {
+  name: string;
+  /** Display order in the tracker grid. */
+  order: number;
+  active: boolean;
+}
+
+/** One row of the habit tracker: the marks for a single day. */
+export interface HabitDay extends Entity {
+  date: ISODate;
+  /** habitId -> done. A missing key means "not marked". */
+  marks: Record<ID, boolean>;
   note?: string;
 }
 
@@ -566,6 +598,8 @@ export interface PlanningParams {
   topicRevisionMin: number;
   /** Percentile band treated as "close enough to keep the target alive". */
   atRiskBand: number;
+  /** Day score at or above which a day counts towards the habit streak. */
+  habitStreakThreshold: number;
 }
 
 export interface Settings extends Entity {
@@ -593,6 +627,8 @@ export interface AppState {
   reviews: WeeklyReview[];
   decisions: PlanningDecision[];
   capacityRecords: CapacityRecord[];
+  habits: Habit[];
+  habitDays: HabitDay[];
   dismissedInsights: string[];
   /**
    * Tombstones: entity id -> ISO timestamp of deletion.

@@ -4,14 +4,20 @@ import { addDays, formatHours, formatLongDate, formatMinutes } from '../domain/d
 import type { EnergyLevel } from '../domain/types';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
+import { calculateHabitStats } from '../engine/habits';
 import { Callout, CapacityMeter, Card, Empty, Field, Modal, SectionLabel, Stat, StatGrid } from '../ui/components';
+import { AddTaskModal } from '../ui/components/AddTaskModal';
 import { TaskCard } from '../ui/components/TaskCard';
+import { StudyDayModal } from './Log';
 import type { RouteKey } from '../ui/layout/Shell';
 
 export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
   const { state, dispatch, today, weekStart } = useStore();
   const { todayPlan, todayCapacity } = useEngine();
-  const [modal, setModal] = useState<null | 'unexpected' | 'travel' | 'checkin'>(null);
+  const [modal, setModal] = useState<null | 'unexpected' | 'travel' | 'checkin' | 'addtask' | 'study'>(null);
+  const habits = calculateHabitStats(state, today);
+  const studyLog = state.dayLogs.find((d) => d.date === today);
+  const studiedMin = studyLog?.focusedMin ?? 0;
 
   const existingLog = state.dayLogs.find((d) => d.date === today);
   const needsDecision = state.tasks.filter((t) => t.needsDecision && t.status === 'missed');
@@ -35,8 +41,13 @@ export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
           <h1>Today</h1>
           <div className="sub">{formatLongDate(today)}</div>
         </div>
-        <div className="right small muted">
-          Energy mode: <strong>{todayPlan.energyMode.replace('_', ' ').toLowerCase()}</strong>
+        <div className="row">
+          <span className="small muted nowrap">
+            Energy: <strong>{todayPlan.energyMode.replace('_', ' ').toLowerCase()}</strong>
+          </span>
+          <button type="button" className="btn small primary" onClick={() => setModal('addtask')}>
+            + Add task
+          </button>
         </div>
       </div>
 
@@ -81,11 +92,79 @@ export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
         </div>
       </Card>
 
+      <Card
+        title="Today's habits"
+        subtitle={`${habits.today.done}/${habits.today.total} done · ${habits.currentStreak}-day streak`}
+        action={
+          <button type="button" className="btn small subtle" onClick={() => navigate('log')}>
+            Full tracker
+          </button>
+        }
+      >
+        {habits.activeHabits.length === 0 ? (
+          <Empty>No habits set up yet. Add them from the Log page.</Empty>
+        ) : (
+          <div className="choice-row">
+            {habits.activeHabits.map((h) => {
+              const done = habits.today.marks[h.id] === true;
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  className="choice"
+                  aria-pressed={done}
+                  onClick={() => dispatch({ type: 'habit/toggle', date: today, habitId: h.id, done: !done })}
+                >
+                  {done ? '✓ ' : ''}
+                  {h.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title="What did you study today?"
+        subtitle={studiedMin > 0 ? `${formatHours(studiedMin, 1)} logged` : 'Nothing logged yet'}
+        action={
+          <button type="button" className="btn small" onClick={() => setModal('study')}>
+            {studiedMin > 0 ? 'Edit log' : 'Log study'}
+          </button>
+        }
+      >
+        {studiedMin > 0 ? (
+          <ul className="list-reset stack">
+            {(['VARC', 'DILR', 'QA'] as const)
+              .filter((s) => (studyLog?.study?.[s]?.minutes ?? 0) > 0 || studyLog?.study?.[s]?.topics)
+              .map((s) => (
+                <li key={s} className="row-between small">
+                  <span>
+                    <strong>{s}</strong> {studyLog?.study?.[s]?.topics ? `— ${studyLog.study[s]?.topics}` : ''}
+                  </span>
+                  <span className="mono tiny">{formatHours(studyLog?.study?.[s]?.minutes ?? 0, 1)}</span>
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <p className="small muted">
+            Record the sections you covered and the hours you actually spent. This is what teaches the planner your
+            real capacity.
+          </p>
+        )}
+      </Card>
+
       {todayPlan.note && <Callout tone="warn">{todayPlan.note}</Callout>}
 
       <SectionLabel>Must do</SectionLabel>
       {todayPlan.mustDo.length === 0 ? (
-        <Empty>Nothing critical scheduled. That is a valid day - protect the buffer.</Empty>
+        <Empty>
+          Nothing critical scheduled. That is a valid day - protect the buffer, or{' '}
+          <button type="button" className="btn small" onClick={() => setModal('addtask')}>
+            add your own task
+          </button>
+          .
+        </Empty>
       ) : (
         todayPlan.mustDo.map((t) => <TaskCard key={t.id} task={t} />)
       )}
@@ -186,6 +265,8 @@ export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
         )}
       </Card>
 
+      {modal === 'addtask' && <AddTaskModal defaultDate={today} onClose={() => setModal(null)} />}
+      {modal === 'study' && <StudyDayModal date={today} onClose={() => setModal(null)} />}
       {modal === 'checkin' && <CheckInModal onClose={() => setModal(null)} />}
       {modal === 'unexpected' && <UnexpectedModal onClose={() => setModal(null)} />}
       {modal === 'travel' && <TravelModal onClose={() => setModal(null)} />}

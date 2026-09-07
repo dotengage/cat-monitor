@@ -32,9 +32,16 @@ export function migrate(raw: Partial<AppState>): AppState {
     reviews: raw.reviews ?? [],
     decisions: raw.decisions ?? [],
     capacityRecords: raw.capacityRecords ?? [],
+    habits: raw.habits && raw.habits.length > 0 ? raw.habits : base.habits,
+    habitDays: raw.habitDays ?? [],
     dismissedInsights: raw.dismissedInsights ?? [],
     deletedIds: raw.deletedIds ?? {},
   };
+
+  // v2 made light the default theme. Only nudge users who never chose one.
+  if ((raw.version ?? 1) < 2 && (raw.settings?.theme ?? 'system') === 'system') {
+    state.settings = { ...state.settings, theme: 'light' };
+  }
 
   // Defensive normalisation: fields added after a user's data was written.
   state.tasks = state.tasks.map((t) => ({

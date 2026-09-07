@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { SECTIONS, SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
+import { SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
 import { addDays, formatDate, formatHours, formatMinutes, shortDayName, weekDates } from '../domain/date';
-import type { Importance, SectionKey, TaskType } from '../domain/types';
+import type { ISODate } from '../domain/types';
 import { calculateWeekCapacity } from '../engine/capacity';
 import { detectConflicts } from '../engine/conflicts';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
-import { Callout, CapacityMeter, Card, Collapse, Empty, Field, Modal, SectionLabel, Stat, StatGrid } from '../ui/components';
+import { Callout, CapacityMeter, Card, Collapse, Empty, SectionLabel, Stat, StatGrid } from '../ui/components';
+import { AddTaskModal } from '../ui/components/AddTaskModal';
 import { TaskCard } from '../ui/components/TaskCard';
 
 export function Week() {
   const { state, dispatch, today, weekStart: currentWeekStart } = useStore();
   const engine = useEngine();
   const [offset, setOffset] = useState(0);
-  const [adding, setAdding] = useState(false);
+  const [addingFor, setAddingFor] = useState<ISODate | null | undefined>(undefined);
 
   const weekStart = addDays(currentWeekStart, offset * 7);
   const isCurrent = offset === 0;
@@ -176,6 +177,14 @@ export function Week() {
                   </div>
                 ))
               )}
+              <button
+                type="button"
+                className="day-add"
+                onClick={() => setAddingFor(date)}
+                aria-label={`Add a task on ${date}`}
+              >
+                + Add
+              </button>
             </div>
           );
         })}
@@ -184,7 +193,7 @@ export function Week() {
       <Card
         title="All tasks this week"
         action={
-          <button type="button" className="btn small" onClick={() => setAdding(true)}>
+          <button type="button" className="btn small primary" onClick={() => setAddingFor(today >= weekStart && today <= addDays(weekStart, 6) ? today : weekStart)}>
             + Add task
           </button>
         }
@@ -217,113 +226,9 @@ export function Week() {
         {backlog.length === 0 ? <Empty>Backlog is empty.</Empty> : backlog.map((t) => <TaskCard key={t.id} task={t} />)}
       </Collapse>
 
-      {adding && <AddTaskModal weekStart={weekStart} onClose={() => setAdding(false)} />}
+      {addingFor !== undefined && (
+        <AddTaskModal defaultDate={addingFor} onClose={() => setAddingFor(undefined)} />
+      )}
     </>
-  );
-}
-
-function AddTaskModal({ weekStart, onClose }: { weekStart: string; onClose: () => void }) {
-  const { dispatch, state, today } = useStore();
-  const [title, setTitle] = useState('');
-  const [detail, setDetail] = useState('');
-  const [date, setDate] = useState(today >= weekStart ? today : weekStart);
-  const [estimate, setEstimate] = useState('45');
-  const [type, setType] = useState<TaskType>('practice');
-  const [section, setSection] = useState<SectionKey | ''>('');
-  const [importance, setImportance] = useState<Importance>('important');
-  const [energy, setEnergy] = useState('3');
-
-  const save = () => {
-    dispatch({
-      type: 'task/add',
-      task: {
-        title: title.trim(),
-        detail: detail.trim() || undefined,
-        date,
-        weekStart,
-        type,
-        section: section || undefined,
-        goalId: state.goals.find((g) => g.isPrimary)?.id,
-        estimateMin: Number(estimate) || 30,
-        importance,
-        energyRequired: (Number(energy) || 3) as 1 | 2 | 3 | 4 | 5,
-        impact: importance === 'critical' ? 5 : importance === 'important' ? 3 : 2,
-        dependsOn: [],
-        status: 'planned',
-        locked: false,
-        postponeCount: 0,
-        origin: 'user',
-      },
-    });
-    onClose();
-  };
-
-  return (
-    <Modal
-      title="Add task"
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="btn primary" disabled={!title.trim()} onClick={save}>
-            Add task
-          </button>
-          <button type="button" className="btn subtle" onClick={onClose}>
-            Cancel
-          </button>
-        </>
-      }
-    >
-      <Field
-        label="Task"
-        htmlFor="ttitle"
-        hint="Be specific and measurable: 'Solve 12 ratio questions and review every incorrect answer', not 'Study QA'."
-      >
-        <input id="ttitle" type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
-      <Field label="Detail" htmlFor="tdetail">
-        <textarea id="tdetail" value={detail} onChange={(e) => setDetail(e.target.value)} />
-      </Field>
-      <div className="inline-fields-2">
-        <Field label="Date" htmlFor="tdate">
-          <input id="tdate" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
-        <Field label="Estimate (minutes)" htmlFor="test">
-          <input id="test" type="number" min={5} step={5} value={estimate} onChange={(e) => setEstimate(e.target.value)} />
-        </Field>
-      </div>
-      <div className="inline-fields-2">
-        <Field label="Type" htmlFor="ttype">
-          <select id="ttype" value={type} onChange={(e) => setType(e.target.value as TaskType)}>
-            {Object.entries(TASK_TYPE_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Section" htmlFor="tsection">
-          <select id="tsection" value={section} onChange={(e) => setSection(e.target.value as SectionKey | '')}>
-            <option value="">None</option>
-            {SECTIONS.map((s) => (
-              <option key={s} value={s}>
-                {SECTION_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <div className="inline-fields-2">
-        <Field label="Importance" htmlFor="timp">
-          <select id="timp" value={importance} onChange={(e) => setImportance(e.target.value as Importance)}>
-            <option value="critical">Critical</option>
-            <option value="important">Important</option>
-            <option value="optional">Optional</option>
-          </select>
-        </Field>
-        <Field label="Energy required (1-5)" htmlFor="tenergy">
-          <input id="tenergy" type="number" min={1} max={5} value={energy} onChange={(e) => setEnergy(e.target.value)} />
-        </Field>
-      </div>
-    </Modal>
   );
 }

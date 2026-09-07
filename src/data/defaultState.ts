@@ -4,12 +4,13 @@ import {
   DEFAULT_PLANNING,
   DEFAULT_PREP_MODE,
   DEFAULT_TARGET_PERCENTILE,
+  HABIT_SEEDS,
   STATE_VERSION,
   TOPIC_SEEDS,
 } from '../config/catConfig';
 import { today as todayISO } from '../domain/date';
 import { nowISO, uid } from '../domain/ids';
-import type { AppState, EnergyLevel, Goal, Settings, Topic, UserProfile } from '../domain/types';
+import type { AppState, EnergyLevel, Goal, Habit, Settings, Topic, UserProfile } from '../domain/types';
 
 export function createTopics(): Topic[] {
   const stamp = nowISO();
@@ -24,6 +25,18 @@ export function createTopics(): Topic[] {
     weight: seed.weight,
     status: 'not-started' as const,
     builtIn: true,
+  }));
+}
+
+export function createHabits(): Habit[] {
+  const stamp = nowISO();
+  return HABIT_SEEDS.map((name, i) => ({
+    id: uid('habit'),
+    createdAt: stamp,
+    updatedAt: stamp,
+    name,
+    order: i,
+    active: true,
   }));
 }
 
@@ -56,7 +69,7 @@ export function createSettings(): Settings {
     id: uid('settings'),
     createdAt: stamp,
     updatedAt: stamp,
-    theme: 'system',
+    theme: 'light',
     weekStartsOn: 1,
     mockProviders: [...DEFAULT_MOCK_PROVIDERS],
     planning: { ...DEFAULT_PLANNING, energyFactors: { ...DEFAULT_PLANNING.energyFactors } },
@@ -125,6 +138,8 @@ export function createInitialState(start = todayISO()): AppState {
     reviews: [],
     decisions: [],
     capacityRecords: [],
+    habits: createHabits(),
+    habitDays: [],
     dismissedInsights: [],
     deletedIds: {},
   };
