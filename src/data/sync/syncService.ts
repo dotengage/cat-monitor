@@ -9,10 +9,13 @@ import type { AppState } from '../../domain/types';
 import { uid } from '../../domain/ids';
 import {
   createDataGist,
+  deleteDataGist,
+  forgetDeviceInGist,
   describeSpaces,
   GistError,
   listDataGists,
   readDataGist,
+  renameDataGist,
   verifyToken,
   writeDataGist,
   type SpaceSummary,
@@ -187,6 +190,51 @@ export async function connectToSpace(
   };
   saveSyncConfig(config);
   return { config, joined: false };
+}
+
+/* ------------------------------------------------------------------ */
+/* Managing spaces                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Renames a space, and keeps this device's label in step if it is the one. */
+export async function renameSpace(token: string, gistId: string, spaceName: string): Promise<SyncConfig | null> {
+  const name = spaceName.trim();
+  if (!name) throw new GistError('Give the space a name.');
+  await renameDataGist(token, gistId, name);
+
+  const config = loadSyncConfig();
+  if (config && config.gistId === gistId) {
+    const next = { ...config, spaceName: name };
+    saveSyncConfig(next);
+    return next;
+  }
+  return config;
+}
+
+/** Drops a device from the shared list. See the note on revocation. */
+export async function forgetDevice(token: string, gistId: string, deviceId: string): Promise<void> {
+  const config = loadSyncConfig();
+  if (config && config.deviceId === deviceId) {
+    throw new GistError('That is this device. Use "Disconnect this device" instead.');
+  }
+  await forgetDeviceInGist(token, gistId, deviceId);
+}
+
+/**
+ * Deletes a space from GitHub for good.
+ *
+ * Local data is untouched: this removes the shared copy, not the copy on this
+ * device. If it was the space this device syncs to, the device is disconnected
+ * rather than left pointing at something that no longer exists.
+ */
+export async function deleteSpace(token: string, gistId: string): Promise<{ disconnected: boolean }> {
+  await deleteDataGist(token, gistId);
+  const config = loadSyncConfig();
+  if (config && config.gistId === gistId) {
+    clearSyncConfig();
+    return { disconnected: true };
+  }
+  return { disconnected: false };
 }
 
 /* ------------------------------------------------------------------ */

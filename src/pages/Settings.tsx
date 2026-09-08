@@ -6,7 +6,7 @@ import { getStorageStatus, type StorageStatus } from '../data/db';
 import { repository, type BackupMeta } from '../data/repository';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Collapse, Empty, Field, Modal } from '../ui/components';
-import { SyncSetup } from '../ui/components/SyncSetup';
+import { DeleteSpaceModal, RenameSpaceModal, SyncSetup } from '../ui/components/SyncSetup';
 
 export function Settings() {
   const { state, dispatch, exportData, importData, resetData, sync, disconnect, syncNow } = useStore();
@@ -435,7 +435,11 @@ function SyncCard({
   disconnect,
   syncNow,
 }: Pick<ReturnType<typeof useStore>, 'sync' | 'disconnect' | 'syncNow'>) {
+  const { renameSpace, deleteSpace, forgetDevice } = useStore();
   const connected = sync.connected;
+  const [renaming, setRenaming] = useState(false);
+  const [deletingSpace, setDeletingSpace] = useState(false);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
 
   return (
     <Card
@@ -480,7 +484,12 @@ function SyncCard({
                 </tr>
                 <tr>
                   <td className="muted">Space</td>
-                  <td>{sync.spaceName ?? 'Unnamed space'}</td>
+                  <td>
+                    {sync.spaceName ?? 'Unnamed space'}{' '}
+                    <button type="button" className="btn small subtle" onClick={() => setRenaming(true)}>
+                      Rename
+                    </button>
+                  </td>
                 </tr>
                 <tr>
                   <td className="muted">Devices</td>
@@ -491,17 +500,46 @@ function SyncCard({
           </div>
 
           {sync.devices.length > 0 && (
-            <ul className="list-reset stack" style={{ marginTop: 10 }}>
-              {sync.devices.map((d) => (
-                <li key={d.id} className="row-between small">
-                  <span>
-                    {d.name}
-                    {d.isThisDevice ? ' — this device' : ''}
-                  </span>
-                  <span className="tiny muted">last seen {new Date(d.lastSeen).toLocaleDateString()}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="section-label">Linked devices</div>
+              <ul className="list-reset stack">
+                {sync.devices.map((d) => (
+                  <li key={d.id} className="row-between small">
+                    <span>
+                      {d.name}
+                      {d.isThisDevice ? ' — this device' : ''}
+                      <span className="tiny muted"> · last seen {new Date(d.lastSeen).toLocaleDateString()}</span>
+                    </span>
+                    {d.isThisDevice ? (
+                      <button type="button" className="btn small danger" onClick={disconnect}>
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={async () => {
+                          setDeviceError(null);
+                          try {
+                            await forgetDevice(d.id);
+                          } catch (err) {
+                            setDeviceError(err instanceof Error ? err.message : 'Could not remove that device.');
+                          }
+                        }}
+                      >
+                        Remove from list
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {deviceError && <Callout tone="risk">{deviceError}</Callout>}
+              <p className="tiny faint" style={{ marginTop: 6 }}>
+                Removing a device only clears it from this list — anything still holding the token will reappear on its
+                next sync. To genuinely cut a device off, delete the token at github.com/settings/tokens and reconnect
+                your own devices with a new one. That disconnects every device at once, which is the point.
+              </p>
+            </>
           )}
 
           {sync.message && sync.phase !== 'error' && <Callout tone="ok">{sync.message}</Callout>}
@@ -514,12 +552,46 @@ function SyncCard({
             <button type="button" className="btn danger" onClick={disconnect}>
               Disconnect this device
             </button>
+            <button type="button" className="btn danger" onClick={() => setDeletingSpace(true)}>
+              Delete this space
+            </button>
           </div>
           <p className="tiny faint" style={{ marginTop: 8 }}>
             Syncs automatically a few seconds after a change, when you reopen the app, and every five minutes. Records
             edited on two devices resolve to the newer edit. Sharing the app with someone else? They need their own
             GitHub account — never your token. Disconnecting removes the token from this device only.
           </p>
+          {renaming && (
+            <RenameSpaceModal
+              space={{ spaceName: sync.spaceName ?? 'Unnamed space' }}
+              onClose={() => setRenaming(false)}
+              onRename={async (name) => {
+                if (sync.gistId) await renameSpace(sync.gistId, name);
+                setRenaming(false);
+              }}
+            />
+          )}
+
+          {deletingSpace && sync.gistId && (
+            <DeleteSpaceModal
+              space={{
+                gistId: sync.gistId,
+                spaceName: sync.spaceName ?? 'Unnamed space',
+                updatedAt: sync.lastSyncedAt ?? '',
+                deviceNames: sync.devices.map((d) => d.name),
+                // Deleting the space you are actively using always asks for
+                // the name, whatever it happens to contain.
+                tasks: 6,
+                mocks: 1,
+                errors: 0,
+              }}
+              onClose={() => setDeletingSpace(false)}
+              onDelete={async () => {
+                await deleteSpace(sync.gistId as string);
+                setDeletingSpace(false);
+              }}
+            />
+          )}
         </>
       )}
     </Card>

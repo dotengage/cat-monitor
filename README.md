@@ -329,6 +329,14 @@ Separate spaces share nothing. This matters in two situations:
 - **Two people, one account.** Two tokens from the same GitHub account see the same gists. Without an explicit choice, the second person silently joins the first person's data and the two get merged. Spaces prevent that.
 - **A second copy for yourself** — a scratch dataset, or a clean restart — without disturbing the real one.
 
+### Managing spaces and devices
+
+From the space chooser (Settings → Sync, before connecting) each space can be **renamed** or **deleted**. Renaming reads the space and writes it back with a new label, so the data inside is untouched. Deleting removes the gist from GitHub permanently — there is no undo — so a space holding real work requires typing its name to confirm, while an empty one created by mistake does not.
+
+Once connected, the panel lists **linked devices**. You can remove any device other than the one you are on.
+
+That removal is bookkeeping, not revocation, and the UI says so: anything still holding the token will reappear on its next sync. To genuinely cut a device off, **delete the token at github.com/settings/tokens** and reconnect your own devices with a new one. Because every device shares one token, that disconnects all of them at once — which is exactly what you want if a token has gone somewhere it should not have.
+
 ### Sharing the app with someone else
 
 The site is public: anyone can open the URL and use it. Their data is local to their device from the start.

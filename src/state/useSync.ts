@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   clearSyncConfig,
   connectToSpace,
+  deleteSpace,
   describeSyncError,
   discoverSpaces,
+  forgetDevice,
   loadSyncConfig,
+  renameSpace,
   syncOnce,
   type SpaceTarget,
   type SyncConfig,
@@ -25,6 +28,9 @@ export interface SyncApi {
   discoverSpaces: (token: string) => Promise<SpaceSummary[]>;
   /** Step two: join a chosen dataset, or create a separate new one. */
   connectToSpace: (token: string, target: SpaceTarget) => Promise<void>;
+  renameSpace: (gistId: string, name: string, token?: string) => Promise<void>;
+  deleteSpace: (gistId: string, token?: string) => Promise<void>;
+  forgetDevice: (deviceId: string) => Promise<void>;
   disconnect: () => void;
   syncNow: () => Promise<void>;
 }
@@ -166,6 +172,39 @@ export function useSync(
     }
   }, []);
 
+  const rename = useCallback(async (gistId: string, name: string, token?: string) => {
+    const auth = token ?? configRef.current?.token;
+    if (!auth) throw new Error('No token available.');
+    const next = await renameSpace(auth, gistId, name);
+    if (next && next.gistId === configRef.current?.gistId) {
+      setConfig(next);
+      setSync((s) => ({ ...s, spaceName: next.spaceName, message: `Renamed to "${next.spaceName}".` }));
+    }
+  }, []);
+
+  const removeSpace = useCallback(async (gistId: string, token?: string) => {
+    const auth = token ?? configRef.current?.token;
+    if (!auth) throw new Error('No token available.');
+    const { disconnected } = await deleteSpace(auth, gistId);
+    if (disconnected) {
+      setConfig(null);
+      syncedPrintRef.current = null;
+      setSync({
+        phase: 'disconnected',
+        connected: false,
+        devices: [],
+        message: 'Space deleted. This device is no longer syncing, but its data is untouched.',
+      });
+    }
+  }, []);
+
+  const removeDevice = useCallback(async (deviceId: string) => {
+    const current = configRef.current;
+    if (!current?.gistId) throw new Error('Not connected to a space.');
+    await forgetDevice(current.token, current.gistId, deviceId);
+    setSync((s) => ({ ...s, devices: s.devices.filter((d) => d.id !== deviceId) }));
+  }, []);
+
   const disconnect = useCallback(() => {
     clearSyncConfig();
     setConfig(null);
@@ -177,5 +216,14 @@ export function useSync(
     await run('manual');
   }, [run]);
 
-  return { sync, discoverSpaces: discover, connectToSpace: joinSpace, disconnect, syncNow };
+  return {
+    sync,
+    discoverSpaces: discover,
+    connectToSpace: joinSpace,
+    renameSpace: rename,
+    deleteSpace: removeSpace,
+    forgetDevice: removeDevice,
+    disconnect,
+    syncNow,
+  };
 }

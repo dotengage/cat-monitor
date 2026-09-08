@@ -204,6 +204,40 @@ export async function writeDataGist(token: string, gistId: string, envelope: Syn
   });
 }
 
+/**
+ * Renames a space without touching its data.
+ *
+ * Read-then-write on purpose: the gist holds the whole dataset in one file, so
+ * writing a name-only payload would erase everything in it.
+ */
+export async function renameDataGist(token: string, gistId: string, spaceName: string): Promise<void> {
+  const envelope = await readDataGist(token, gistId);
+  if (!envelope) {
+    throw new GistError('That space could not be read, so it was not renamed. Nothing was changed.');
+  }
+  await writeDataGist(token, gistId, { ...envelope, spaceName, updatedAt: new Date().toISOString() });
+}
+
+/**
+ * Removes a device from a space's device list.
+ *
+ * This is bookkeeping, not revocation: anything still holding the token can
+ * re-add itself on its next sync. Cutting off access means revoking the token
+ * on GitHub, which is surfaced alongside this in the UI.
+ */
+export async function forgetDeviceInGist(token: string, gistId: string, deviceId: string): Promise<void> {
+  const envelope = await readDataGist(token, gistId);
+  if (!envelope) throw new GistError('That space could not be read, so nothing was changed.');
+  const devices = { ...(envelope.devices ?? {}) };
+  delete devices[deviceId];
+  await writeDataGist(token, gistId, { ...envelope, devices, updatedAt: new Date().toISOString() });
+}
+
+/** Permanently deletes a space from GitHub. There is no undo on GitHub's side. */
+export async function deleteDataGist(token: string, gistId: string): Promise<void> {
+  await request<void>(token, `/gists/${gistId}`, { method: 'DELETE' });
+}
+
 function serialise(envelope: SyncEnvelope): string {
   return JSON.stringify(envelope, null, 0);
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { SpaceSummary } from '../../data/sync/gistClient';
 import { formatDate } from '../../domain/date';
 import { useStore } from '../../state/store';
-import { Callout, Field } from './index';
+import { Callout, Field, Modal } from './index';
 
 /**
  * Two-step sync setup.
@@ -13,11 +13,14 @@ import { Callout, Field } from './index';
  * first one found is how two people's data ends up merged.
  */
 export function SyncSetup({ onDone }: { onDone?: () => void }) {
-  const { sync, discoverSpaces, connectToSpace } = useStore();
+  const { sync, discoverSpaces, connectToSpace, renameSpace, deleteSpace } = useStore();
   const [token, setToken] = useState('');
   const [spaces, setSpaces] = useState<SpaceSummary[] | null>(null);
   const [newName, setNewName] = useState('My CAT data');
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState<SpaceSummary | null>(null);
+  const [deleting, setDeleting] = useState<SpaceSummary | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const check = async () => {
     setBusy(true);
@@ -27,6 +30,14 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
       setSpaces(null);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const refresh = async () => {
+    try {
+      setSpaces(await discoverSpaces(token));
+    } catch {
+      /* surfaced via sync.error */
     }
   };
 
@@ -105,6 +116,12 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
                   >
                     This is mine — join it
                   </button>
+                  <button type="button" className="btn small" disabled={busy || s.unreadable} onClick={() => setRenaming(s)}>
+                    Rename
+                  </button>
+                  <button type="button" className="btn small danger" disabled={busy} onClick={() => setDeleting(s)}>
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -122,6 +139,7 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
       >
         <input id="spacename" type="text" value={newName} onChange={(e) => setNewName(e.target.value)} />
       </Field>
+      {notice && <Callout tone="ok">{notice}</Callout>}
       {sync.error && <Callout tone="risk">{sync.error}</Callout>}
       <div className="btn-group">
         <button
@@ -136,6 +154,181 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
           Back
         </button>
       </div>
+
+      {renaming && (
+        <RenameSpaceModal
+          space={renaming}
+          onClose={() => setRenaming(null)}
+          onRename={async (name) => {
+            await renameSpace(renaming.gistId, name, token);
+            setNotice(`Renamed to "${name}".`);
+            setRenaming(null);
+            await refresh();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <DeleteSpaceModal
+          space={deleting}
+          onClose={() => setDeleting(null)}
+          onDelete={async () => {
+            await deleteSpace(deleting.gistId, token);
+            setNotice(`Deleted "${deleting.spaceName}".`);
+            setDeleting(null);
+            await refresh();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Rename                                                              */
+/* ------------------------------------------------------------------ */
+
+export function RenameSpaceModal({
+  space,
+  onClose,
+  onRename,
+}: {
+  space: { spaceName: string };
+  onClose: () => void;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(space.spaceName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onRename(name.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Rename space"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn primary" disabled={!name.trim() || busy} onClick={save}>
+            {busy ? 'Renaming…' : 'Rename'}
+          </button>
+          <button type="button" className="btn subtle" onClick={onClose}>
+            Cancel
+          </button>
+        </>
+      }
+    >
+      <Field
+        label="Space name"
+        htmlFor="renamespace"
+        hint="Only a label. Renaming changes nothing about the data inside it."
+      >
+        <input id="renamespace" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      {error && <Callout tone="risk">{error}</Callout>}
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Delete                                                              */
+/* ------------------------------------------------------------------ */
+
+export function DeleteSpaceModal({
+  space,
+  onClose,
+  onDelete,
+}: {
+  space: SpaceSummary;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // A space holding real work demands a deliberate act; an empty one created
+  // by mistake a minute ago should not need ceremony.
+  const holdsRealWork = space.mocks > 0 || space.tasks > 5 || space.errors > 0;
+  const canDelete = !holdsRealWork || confirmText.trim() === space.spaceName.trim();
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Delete "${space.spaceName}"?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn danger" disabled={!canDelete || busy} onClick={remove}>
+            {busy ? 'Deleting…' : 'Delete permanently'}
+          </button>
+          <button type="button" className="btn subtle" onClick={onClose}>
+            Cancel
+          </button>
+        </>
+      }
+    >
+      <Callout tone="risk">
+        This permanently deletes the shared copy on GitHub — gists have no undo. The data on <strong>this</strong>{' '}
+        device is untouched, but any other device syncing to this space loses its link.
+      </Callout>
+      <div className="table-wrap" style={{ marginTop: 10 }}>
+        <table>
+          <tbody>
+            <tr>
+              <td className="muted">Contains</td>
+              <td className="num mono">
+                {space.tasks} tasks · {space.mocks} mocks · {space.errors} errors
+              </td>
+            </tr>
+            <tr>
+              <td className="muted">Devices</td>
+              <td>{space.deviceNames.length > 0 ? space.deviceNames.join(', ') : 'none recorded'}</td>
+            </tr>
+            <tr>
+              <td className="muted">Last updated</td>
+              <td>{space.updatedAt ? new Date(space.updatedAt).toLocaleString() : 'never'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {holdsRealWork ? (
+        <Field label={`This space holds real work. Type "${space.spaceName}" to confirm.`} htmlFor="confirmdelete">
+          <input
+            id="confirmdelete"
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+      ) : (
+        <p className="small muted" style={{ marginTop: 10 }}>
+          This space is effectively empty, so no confirmation phrase is needed.
+        </p>
+      )}
+      {error && <Callout tone="risk">{error}</Callout>}
+      <p className="tiny faint">Export a JSON backup first if you are unsure — Settings → Data → Export.</p>
+    </Modal>
   );
 }
