@@ -315,10 +315,25 @@ Off by default. When enabled, your data lives in **one secret gist in your own G
 ### Setting it up
 
 1. Create a token at **github.com/settings/tokens → Generate new token (classic)**. Tick **`gist`** and nothing else. Copy it.
-2. On your main device: **Settings → Sync across devices → paste the token → Connect**. This creates the gist and uploads your data.
-3. On the second device: paste **the same token**. The app finds the existing gist automatically and pulls everything across.
+2. On your main device: **Settings → Sync across devices → paste the token → Continue → name your space → Create**. This creates the gist and uploads your data.
+3. On the second device: paste **the same token → Continue**, then pick your existing space and choose **This is mine — join it**.
 
 If the second device has not been set up yet, use **"Restore from another device"** on the first onboarding screen rather than going through setup — setting up separately on two devices creates two of everything.
+
+### Spaces: one account, several independent datasets
+
+A token proves *which GitHub account* you are; it does not say *which dataset* you want. So the app never joins one automatically. After the token is validated it lists every CAT Monitor dataset in the account — with task, mock and error counts, target percentile, exam date and device names — and you either join one explicitly or create a separate space.
+
+Separate spaces share nothing. This matters in two situations:
+
+- **Two people, one account.** Two tokens from the same GitHub account see the same gists. Without an explicit choice, the second person silently joins the first person's data and the two get merged. Spaces prevent that.
+- **A second copy for yourself** — a scratch dataset, or a clean restart — without disturbing the real one.
+
+### Sharing the app with someone else
+
+The site is public: anyone can open the URL and use it. Their data is local to their device from the start.
+
+For their own sync, **they need their own GitHub account and their own token**. Never share yours — a `gist`-scoped token lets the holder read and write *every* gist in your account, and both of you pointing tokens at the same account is what merges two people's data.
 
 ### When it syncs
 
@@ -335,6 +350,7 @@ Deletions are remembered as tombstones (pruned after 90 days) so a record delete
 - **The token is stored on each device** (browser local storage) and is never included in exports or in the synced file. It can only touch Gists — nothing else in your GitHub account.
 - **A "secret" gist is unlisted, not access-controlled.** Anyone who has its 32-character address could read it. Treat the link as private. The gist contains your mock scores, task titles and error notes — no passwords and no contact details.
 - **Disconnecting** removes the token from that device only. Your data stays, on both the device and GitHub.
+- **The gist keeps full revision history.** If a sync ever goes wrong, open the gist on GitHub, pick an earlier revision, copy its raw JSON and use **Settings → Import backup** — the app reads that file format directly.
 
 ## Backup, export and reset
 

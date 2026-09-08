@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   clearSyncConfig,
-  connect as connectSync,
+  connectToSpace,
   describeSyncError,
+  discoverSpaces,
   loadSyncConfig,
   syncOnce,
+  type SpaceTarget,
   type SyncConfig,
   type SyncState,
 } from '../data/sync/syncService';
+import type { SpaceSummary } from '../data/sync/gistClient';
 import { fingerprint } from '../data/sync/merge';
 import type { AppState } from '../domain/types';
 
@@ -18,7 +21,10 @@ const POLL_INTERVAL_MS = 5 * 60_000;
 
 export interface SyncApi {
   sync: SyncState;
-  connect: (token: string) => Promise<void>;
+  /** Step one: validate the token and list the datasets already in the account. */
+  discoverSpaces: (token: string) => Promise<SpaceSummary[]>;
+  /** Step two: join a chosen dataset, or create a separate new one. */
+  connectToSpace: (token: string, target: SpaceTarget) => Promise<void>;
   disconnect: () => void;
   syncNow: () => Promise<void>;
 }
@@ -43,6 +49,7 @@ export function useSync(
       connected: Boolean(existing),
       lastSyncedAt: existing?.lastSyncedAt,
       devices: [],
+      spaceName: existing?.spaceName,
     };
   });
 
@@ -77,6 +84,7 @@ export function useSync(
             .map(([id, d]) => ({ id, name: d.name, lastSeen: d.lastSeen, isThisDevice: id === outcome.config.deviceId }))
             .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1)),
           gistId: outcome.config.gistId,
+          spaceName: outcome.config.spaceName,
         });
       } catch (err) {
         // A failed sync is never fatal: local data is untouched and we retry.
@@ -123,32 +131,40 @@ export function useSync(
     };
   }, [config, run]);
 
-  const connect = useCallback(
-    async (token: string) => {
-      setSync((s) => ({ ...s, phase: 'syncing', error: undefined }));
-      try {
-        const { config: next, adopted } = await connectSync(token, stateRef.current);
-        setConfig(next);
-        syncedPrintRef.current = null;
-        setSync({
-          phase: 'idle',
-          connected: true,
-          lastSyncedAt: next.lastSyncedAt,
-          message: adopted
-            ? 'Connected to the sync file your other device created. Pulling its data now.'
-            : 'Sync set up. This device is now the source for your other devices.',
-          devices: [],
-          gistId: next.gistId,
-        });
-      } catch (err) {
-        // Nothing was stored, so the device is still disconnected - show the
-        // error against the setup form rather than a phantom connection.
-        setSync((s) => ({ ...s, phase: 'disconnected', connected: false, error: describeSyncError(err) }));
-        throw err;
-      }
-    },
-    [],
-  );
+  const discover = useCallback(async (token: string) => {
+    setSync((s) => ({ ...s, error: undefined }));
+    try {
+      return await discoverSpaces(token);
+    } catch (err) {
+      setSync((s) => ({ ...s, phase: 'disconnected', connected: false, error: describeSyncError(err) }));
+      throw err;
+    }
+  }, []);
+
+  const joinSpace = useCallback(async (token: string, target: SpaceTarget) => {
+    setSync((s) => ({ ...s, phase: 'syncing', error: undefined }));
+    try {
+      const { config: next, joined } = await connectToSpace(token, target, stateRef.current);
+      setConfig(next);
+      syncedPrintRef.current = null;
+      setSync({
+        phase: 'idle',
+        connected: true,
+        lastSyncedAt: next.lastSyncedAt,
+        message: joined
+          ? `Joined "${next.spaceName}". Pulling its data now.`
+          : `Created "${next.spaceName}". This device is now its source.`,
+        devices: [],
+        gistId: next.gistId,
+        spaceName: next.spaceName,
+      });
+    } catch (err) {
+      // Nothing was stored, so the device is still disconnected - show the
+      // error against the setup form rather than a phantom connection.
+      setSync((s) => ({ ...s, phase: 'disconnected', connected: false, error: describeSyncError(err) }));
+      throw err;
+    }
+  }, []);
 
   const disconnect = useCallback(() => {
     clearSyncConfig();
@@ -161,5 +177,5 @@ export function useSync(
     await run('manual');
   }, [run]);
 
-  return { sync, connect, disconnect, syncNow };
+  return { sync, discoverSpaces: discover, connectToSpace: joinSpace, disconnect, syncNow };
 }

@@ -9,11 +9,13 @@ import type { AppState } from '../../domain/types';
 import { uid } from '../../domain/ids';
 import {
   createDataGist,
-  findDataGist,
+  describeSpaces,
   GistError,
+  listDataGists,
   readDataGist,
   verifyToken,
   writeDataGist,
+  type SpaceSummary,
   type SyncDevice,
   type SyncEnvelope,
 } from './gistClient';
@@ -25,6 +27,9 @@ export interface SyncConfig {
   /** GitHub personal access token with the `gist` scope. Device-local only. */
   token: string;
   gistId?: string;
+  /** Which dataset this device belongs to. */
+  spaceId?: string;
+  spaceName?: string;
   deviceId: string;
   deviceName: string;
   lastSyncedAt?: string;
@@ -41,6 +46,7 @@ export interface SyncState {
   error?: string;
   devices: { id: string; name: string; lastSeen: string; isThisDevice: boolean }[];
   gistId?: string;
+  spaceName?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -113,42 +119,74 @@ export function newDeviceId(): string {
 
 export interface ConnectResult {
   config: SyncConfig;
-  /** True when an existing gist from another device was adopted. */
-  adopted: boolean;
+  /** True when an existing space was joined rather than created. */
+  joined: boolean;
 }
 
 /**
- * Validates the token, then either adopts the gist another device already
- * created or creates a new one. Adoption is what makes the second device a
- * paste-the-token-and-done affair.
+ * Step one: prove the token works and show what is already in the account.
+ *
+ * Nothing is joined automatically. A GitHub account can hold more than one
+ * dataset - two people, or one person with a separate practice copy - and
+ * silently joining the first one found is exactly how two sets of data end up
+ * merged into one.
  */
-export async function connect(token: string, state: AppState): Promise<ConnectResult> {
+export async function discoverSpaces(token: string): Promise<SpaceSummary[]> {
   const trimmed = token.trim();
-  if (!trimmed) throw new GistError('Paste a GitHub token to connect.');
-
+  if (!trimmed) throw new GistError('Paste a GitHub token to continue.');
   await verifyToken(trimmed);
+  return describeSpaces(trimmed);
+}
 
+export type SpaceTarget =
+  | { kind: 'join'; gistId: string; spaceName: string }
+  | { kind: 'create'; spaceName: string };
+
+/** Step two: join the chosen space, or create a brand-new, separate one. */
+export async function connectToSpace(
+  token: string,
+  target: SpaceTarget,
+  state: AppState,
+): Promise<ConnectResult> {
+  const trimmed = token.trim();
   const deviceId = newDeviceId();
   const deviceName = detectDeviceName();
-  const existing = await findDataGist(trimmed);
+  const now = new Date().toISOString();
 
-  if (existing) {
-    const config: SyncConfig = { token: trimmed, gistId: existing, deviceId, deviceName };
+  if (target.kind === 'join') {
+    const config: SyncConfig = {
+      token: trimmed,
+      gistId: target.gistId,
+      spaceName: target.spaceName,
+      deviceId,
+      deviceName,
+    };
     saveSyncConfig(config);
-    return { config, adopted: true };
+    return { config, joined: true };
   }
 
+  const spaceId = uid('space');
   const envelope: SyncEnvelope = {
     app: 'cat-monitor',
     envelopeVersion: 1,
-    updatedAt: new Date().toISOString(),
-    devices: { [deviceId]: { name: deviceName, lastSeen: new Date().toISOString() } },
+    spaceId,
+    spaceName: target.spaceName,
+    updatedAt: now,
+    devices: { [deviceId]: { name: deviceName, lastSeen: now } },
     state,
   };
   const gistId = await createDataGist(trimmed, envelope);
-  const config: SyncConfig = { token: trimmed, gistId, deviceId, deviceName, lastSyncedAt: envelope.updatedAt };
+  const config: SyncConfig = {
+    token: trimmed,
+    gistId,
+    spaceId,
+    spaceName: target.spaceName,
+    deviceId,
+    deviceName,
+    lastSyncedAt: now,
+  };
   saveSyncConfig(config);
-  return { config, adopted: false };
+  return { config, joined: false };
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,9 +207,18 @@ export interface SyncOutcome {
  * Returns the merged state for the caller to adopt.
  */
 export async function syncOnce(config: SyncConfig, local: AppState): Promise<SyncOutcome> {
+  // Never guess which gist to use: a device stays in the space it joined.
+  // Falling back to "whichever gist exists" is what merged two people's data.
   let gistId = config.gistId;
   if (!gistId) {
-    gistId = await findDataGist(config.token);
+    const candidates = await listDataGists(config.token);
+    if (candidates.length === 1) {
+      gistId = candidates[0];
+    } else if (candidates.length > 1) {
+      throw new GistError(
+        'This account holds several CAT Monitor datasets and this device is not attached to one. Disconnect and reconnect, then pick the right space.',
+      );
+    }
   }
 
   const now = new Date().toISOString();
@@ -182,6 +229,8 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
     const envelope: SyncEnvelope = {
       app: 'cat-monitor',
       envelopeVersion: 1,
+      spaceId: config.spaceId,
+      spaceName: config.spaceName,
       updatedAt: now,
       devices: { [config.deviceId]: thisDevice },
       state: local,
@@ -205,6 +254,8 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
     const envelope: SyncEnvelope = {
       app: 'cat-monitor',
       envelopeVersion: 1,
+      spaceId: config.spaceId,
+      spaceName: config.spaceName,
       updatedAt: now,
       devices: { [config.deviceId]: thisDevice },
       state: local,
@@ -233,6 +284,8 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
     await writeDataGist(config.token, gistId, {
       app: 'cat-monitor',
       envelopeVersion: 1,
+      spaceId: config.spaceId ?? remote.spaceId,
+      spaceName: config.spaceName ?? remote.spaceName,
       updatedAt: now,
       devices,
       state: merged,
@@ -240,7 +293,13 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
     pushed = true;
   }
 
-  const nextConfig = { ...config, gistId, lastSyncedAt: now };
+  const nextConfig = {
+    ...config,
+    gistId,
+    spaceId: config.spaceId ?? remote.spaceId,
+    spaceName: config.spaceName ?? remote.spaceName,
+    lastSyncedAt: now,
+  };
   saveSyncConfig(nextConfig);
 
   return {

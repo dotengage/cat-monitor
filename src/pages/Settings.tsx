@@ -6,9 +6,10 @@ import { getStorageStatus, type StorageStatus } from '../data/db';
 import { repository, type BackupMeta } from '../data/repository';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Collapse, Empty, Field, Modal } from '../ui/components';
+import { SyncSetup } from '../ui/components/SyncSetup';
 
 export function Settings() {
-  const { state, dispatch, exportData, importData, resetData, sync, connect, disconnect, syncNow } = useStore();
+  const { state, dispatch, exportData, importData, resetData, sync, disconnect, syncNow } = useStore();
   const { profile, settings } = state;
   const [message, setMessage] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -302,7 +303,7 @@ export function Settings() {
         )}
       </Card>
 
-      <SyncCard sync={sync} connect={connect} disconnect={disconnect} syncNow={syncNow} />
+      <SyncCard sync={sync} disconnect={disconnect} syncNow={syncNow} />
 
       <Card title="Data">
         <p className="small muted">
@@ -431,25 +432,10 @@ export function Settings() {
 
 function SyncCard({
   sync,
-  connect,
   disconnect,
   syncNow,
-}: Pick<ReturnType<typeof useStore>, 'sync' | 'connect' | 'disconnect' | 'syncNow'>) {
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
+}: Pick<ReturnType<typeof useStore>, 'sync' | 'disconnect' | 'syncNow'>) {
   const connected = sync.connected;
-
-  const doConnect = async () => {
-    setBusy(true);
-    try {
-      await connect(token);
-      setToken('');
-    } catch {
-      /* the error is surfaced through sync.error */
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <Card
@@ -471,33 +457,9 @@ function SyncCard({
       {!connected ? (
         <>
           <p className="small muted">
-            Keeps your phone and computer in step using one secret file in your own GitHub account. No new account, no
-            server. Paste a GitHub token with <strong>Gists</strong> permission below - the same token on every device.
+            Keeps your own devices in step using one secret file in your own GitHub account. No new account, no server.
           </p>
-          <Field
-            label="GitHub token"
-            htmlFor="synctoken"
-            hint="Starts with ghp_ or github_pat_. It is stored only on this device and is never included in exports."
-          >
-            <input
-              id="synctoken"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="ghp_..."
-            />
-          </Field>
-          <button type="button" className="btn primary" disabled={!token.trim() || busy} onClick={doConnect}>
-            {busy ? 'Connecting…' : 'Connect'}
-          </button>
-          {sync.error && <Callout tone="risk">{sync.error}</Callout>}
-          <p className="tiny faint" style={{ marginTop: 10 }}>
-            Create one at github.com/settings/tokens → Generate new token (classic) → tick <strong>gist</strong> only.
-            A secret gist is unlisted rather than access-controlled: anyone holding its 32-character address could read
-            it, so treat the link as private.
-          </p>
+          <SyncSetup />
         </>
       ) : (
         <>
@@ -517,8 +479,8 @@ function SyncCard({
                   </td>
                 </tr>
                 <tr>
-                  <td className="muted">Storage</td>
-                  <td>GitHub secret gist (your account)</td>
+                  <td className="muted">Space</td>
+                  <td>{sync.spaceName ?? 'Unnamed space'}</td>
                 </tr>
                 <tr>
                   <td className="muted">Devices</td>
@@ -554,9 +516,9 @@ function SyncCard({
             </button>
           </div>
           <p className="tiny faint" style={{ marginTop: 8 }}>
-            Syncs automatically a few seconds after you make a change, when you reopen the app, and every five minutes.
-            Records edited on both devices resolve to the newer edit; nothing is silently overwritten wholesale.
-            Disconnecting removes the token from this device only - your data stays.
+            Syncs automatically a few seconds after a change, when you reopen the app, and every five minutes. Records
+            edited on two devices resolve to the newer edit. Sharing the app with someone else? They need their own
+            GitHub account — never your token. Disconnecting removes the token from this device only.
           </p>
         </>
       )}

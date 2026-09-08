@@ -31,9 +31,29 @@ export interface SyncDevice {
 export interface SyncEnvelope {
   app: 'cat-monitor';
   envelopeVersion: 1;
+  /**
+   * Identifies one independent dataset. A single GitHub account can hold
+   * several - one per person, or one per purpose - and they never mix.
+   */
+  spaceId?: string;
+  spaceName?: string;
   updatedAt: string;
   devices: Record<string, SyncDevice>;
   state: AppState;
+}
+
+/** Enough about a space to decide whether it is yours before joining it. */
+export interface SpaceSummary {
+  gistId: string;
+  spaceName: string;
+  updatedAt: string;
+  deviceNames: string[];
+  tasks: number;
+  mocks: number;
+  errors: number;
+  targetPercentile?: number;
+  examDate?: string;
+  unreadable?: boolean;
 }
 
 async function request<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
@@ -88,12 +108,52 @@ export async function verifyToken(token: string): Promise<void> {
   await request<GistPayload[]>(token, '/gists?per_page=1');
 }
 
-/** Finds an existing CAT Monitor gist so a second device connects by itself. */
-export async function findDataGist(token: string): Promise<string | undefined> {
-  // 100 per page is plenty; the gist is created by this app and recently used.
+/**
+ * Every CAT Monitor dataset in this account.
+ *
+ * Deliberately returns all of them rather than the first match: one GitHub
+ * account can legitimately hold more than one dataset, and silently joining
+ * whichever happened to be created first is how two people's data ends up
+ * merged together.
+ */
+export async function listDataGists(token: string): Promise<string[]> {
   const gists = await request<GistPayload[]>(token, '/gists?per_page=100');
-  const match = gists.find((g) => Object.keys(g.files ?? {}).includes(DATA_FILENAME));
-  return match?.id;
+  return gists.filter((g) => Object.keys(g.files ?? {}).includes(DATA_FILENAME)).map((g) => g.id);
+}
+
+/** Summarises each space so the user can tell their own data from someone else's. */
+export async function describeSpaces(token: string, limit = 10): Promise<SpaceSummary[]> {
+  const ids = (await listDataGists(token)).slice(0, limit);
+  const out: SpaceSummary[] = [];
+  for (const gistId of ids) {
+    try {
+      const envelope = await readDataGist(token, gistId);
+      if (!envelope) continue;
+      out.push({
+        gistId,
+        spaceName: envelope.spaceName ?? 'Unnamed space',
+        updatedAt: envelope.updatedAt,
+        deviceNames: Object.values(envelope.devices ?? {}).map((d) => d.name),
+        tasks: envelope.state?.tasks?.length ?? 0,
+        mocks: envelope.state?.mocks?.length ?? 0,
+        errors: envelope.state?.errors?.length ?? 0,
+        targetPercentile: envelope.state?.profile?.targetPercentile,
+        examDate: envelope.state?.profile?.examDate,
+      });
+    } catch {
+      out.push({
+        gistId,
+        spaceName: 'Unreadable space',
+        updatedAt: '',
+        deviceNames: [],
+        tasks: 0,
+        mocks: 0,
+        errors: 0,
+        unreadable: true,
+      });
+    }
+  }
+  return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
 
 export async function createDataGist(token: string, envelope: SyncEnvelope): Promise<string> {

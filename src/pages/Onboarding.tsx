@@ -18,6 +18,7 @@ import type {
 } from '../domain/types';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Field } from '../ui/components';
+import { SyncSetup } from '../ui/components/SyncSetup';
 
 type DraftCommitment = Omit<Commitment, 'id' | 'createdAt' | 'updatedAt'>;
 
@@ -26,11 +27,9 @@ const STEPS = ['Goal', 'Commitments', 'Available time', 'Energy', 'Baseline', 'C
 const emptySection = { score: 0, percentile: 0, attempts: 0, correct: 0, incorrect: 0 };
 
 export function Onboarding() {
-  const { state, dispatch, today, sync, connect } = useStore();
+  const { state, dispatch, today } = useStore();
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<'setup' | 'restore'>('setup');
-  const [restoreToken, setRestoreToken] = useState('');
-  const [restoring, setRestoring] = useState(false);
 
   const [profile, setProfile] = useState<Partial<UserProfile>>({
     examDate: state.profile.examDate,
@@ -151,42 +150,11 @@ export function Onboarding() {
       {mode === 'restore' ? (
         <Card title="Restore from another device">
           <p className="small muted">
-            If you already set this up on another device, paste the same GitHub token here. Your goal, mocks, tasks and
-            error log will be pulled across - there is no need to go through setup again.
+            If you already use this on another device, paste the same GitHub token and pick your existing data. If a
+            friend shares the app, they need their own GitHub account — not your token.
           </p>
-          <Field
-            label="GitHub token"
-            htmlFor="restoretoken"
-            hint="The same token you used on your other device. It is stored only on this device."
-          >
-            <input
-              id="restoretoken"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={restoreToken}
-              onChange={(e) => setRestoreToken(e.target.value)}
-              placeholder="ghp_..."
-            />
-          </Field>
-          {sync.error && <Callout tone="risk">{sync.error}</Callout>}
-          {restoring && !sync.error && <Callout tone="ok">Connected. Pulling your data across…</Callout>}
-          <div className="btn-group">
-            <button
-              type="button"
-              className="btn primary"
-              disabled={!restoreToken.trim() || restoring}
-              onClick={async () => {
-                setRestoring(true);
-                try {
-                  await connect(restoreToken);
-                } catch {
-                  setRestoring(false);
-                }
-              }}
-            >
-              {restoring ? 'Connecting…' : 'Connect and restore'}
-            </button>
+          <SyncSetup />
+          <div className="btn-group" style={{ marginTop: 10 }}>
             <button type="button" className="btn subtle" onClick={() => setMode('setup')}>
               Back to setup
             </button>
