@@ -6,7 +6,7 @@ import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
 import { calculateHabitStats } from '../engine/habits';
 import { Callout, CapacityMeter, Card, Empty, Field, Modal, SectionLabel, Stat, StatGrid } from '../ui/components';
-import { AddTaskModal } from '../ui/components/AddTaskModal';
+import { TaskEditorModal } from '../ui/components/TaskEditor';
 import { TaskCard } from '../ui/components/TaskCard';
 import { StudyDayModal } from './Log';
 import type { RouteKey } from '../ui/layout/Shell';
@@ -265,7 +265,7 @@ export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
         )}
       </Card>
 
-      {modal === 'addtask' && <AddTaskModal defaultDate={today} onClose={() => setModal(null)} />}
+      {modal === 'addtask' && <TaskEditorModal defaultDate={today} onClose={() => setModal(null)} />}
       {modal === 'study' && <StudyDayModal date={today} onClose={() => setModal(null)} />}
       {modal === 'checkin' && <CheckInModal onClose={() => setModal(null)} />}
       {modal === 'unexpected' && <UnexpectedModal onClose={() => setModal(null)} />}

@@ -13,6 +13,7 @@ export function Mocks() {
   const { state, dispatch, today } = useStore();
   const { cadence } = useEngine();
   const [adding, setAdding] = useState<'full' | 'sectional' | null>(null);
+  const [editingMock, setEditingMock] = useState<Mock | null>(null);
   const [analysing, setAnalysing] = useState<Mock | null>(null);
 
   const mocks = sortedMocks(state).reverse();
@@ -157,6 +158,9 @@ export function Mocks() {
               <button type="button" className="btn small primary" onClick={() => setAnalysing(mock)}>
                 {mock.analysed ? 'Edit analysis' : 'Analyse this mock'}
               </button>
+              <button type="button" className="btn small" onClick={() => setEditingMock(mock)}>
+                ✎ Edit scores
+              </button>
               <button type="button" className="btn small danger" onClick={() => dispatch({ type: 'mock/delete', id: mock.id })}>
                 Delete
               </button>
@@ -166,6 +170,14 @@ export function Mocks() {
       )}
 
       {adding && <MockModal kind={adding} today={today} onClose={() => setAdding(null)} />}
+      {editingMock && (
+        <MockModal
+          kind={editingMock.kind}
+          today={today}
+          mock={editingMock}
+          onClose={() => setEditingMock(null)}
+        />
+      )}
       {analysing && <AnalysisModal mock={analysing} onClose={() => setAnalysing(null)} />}
     </>
   );
@@ -175,54 +187,68 @@ function avg(values: number[]): number {
   return values.reduce((a, v) => a + v, 0) / values.length;
 }
 
-function MockModal({ kind, today, onClose }: { kind: 'full' | 'sectional'; today: string; onClose: () => void }) {
+function MockModal({
+  kind,
+  today,
+  mock,
+  onClose,
+}: {
+  kind: 'full' | 'sectional';
+  today: string;
+  /** Present when correcting a mock that was already recorded. */
+  mock?: Mock;
+  onClose: () => void;
+}) {
   const { state, dispatch } = useStore();
-  const [date, setDate] = useState(today);
-  const [provider, setProvider] = useState(state.settings.mockProviders[0]);
-  const [name, setName] = useState(kind === 'full' ? `Mock ${state.mocks.filter((m) => m.kind === 'full').length + 1}` : 'Sectional');
-  const [section, setSection] = useState<SectionKey>('QA');
-  const [overallScore, setOverallScore] = useState('');
-  const [overallPercentile, setOverallPercentile] = useState('');
+  const editing = Boolean(mock);
+  const [date, setDate] = useState(mock?.date ?? today);
+  const [provider, setProvider] = useState(mock?.provider ?? state.settings.mockProviders[0]);
+  const [name, setName] = useState(
+    mock?.name ?? (kind === 'full' ? `Mock ${state.mocks.filter((m) => m.kind === 'full').length + 1}` : 'Sectional'),
+  );
+  const [section, setSection] = useState<SectionKey>(mock?.section ?? 'QA');
+  const [overallScore, setOverallScore] = useState(mock?.overallScore?.toString() ?? '');
+  const [overallPercentile, setOverallPercentile] = useState(mock?.overallPercentile?.toString() ?? '');
   const [sections, setSections] = useState<Record<SectionKey, SectionScore>>({
-    VARC: { ...emptyScore },
-    DILR: { ...emptyScore },
-    QA: { ...emptyScore },
+    VARC: { ...emptyScore, ...(mock?.sections.VARC ?? {}) },
+    DILR: { ...emptyScore, ...(mock?.sections.DILR ?? {}) },
+    QA: { ...emptyScore, ...(mock?.sections.QA ?? {}) },
   });
-  const [setsAttempted, setSetsAttempted] = useState('');
-  const [setsSolved, setSetsSolved] = useState('');
+  const [setsAttempted, setSetsAttempted] = useState(mock?.dilrSetsAttempted?.toString() ?? '');
+  const [setsSolved, setSetsSolved] = useState(mock?.dilrSetsSolved?.toString() ?? '');
 
   const relevantSections = kind === 'full' ? SECTIONS : [section];
 
   const save = () => {
-    dispatch({
-      type: 'mock/add',
-      mock: {
-        kind,
-        date,
-        provider,
-        name,
-        section: kind === 'sectional' ? section : undefined,
-        overallScore: numOrUndef(overallScore),
-        overallPercentile: numOrUndef(overallPercentile),
-        sections: Object.fromEntries(relevantSections.map((s) => [s, sections[s]])) as Mock['sections'],
-        dilrSetsAttempted: numOrUndef(setsAttempted),
-        dilrSetsSolved: numOrUndef(setsSolved),
-        lessons: [],
-        analysed: false,
-        weakTopicIds: [],
-      },
-    });
+    const scores = {
+      date,
+      provider,
+      name,
+      section: kind === 'sectional' ? section : undefined,
+      overallScore: numOrUndef(overallScore),
+      overallPercentile: numOrUndef(overallPercentile),
+      sections: Object.fromEntries(relevantSections.map((s) => [s, sections[s]])) as Mock['sections'],
+      dilrSetsAttempted: numOrUndef(setsAttempted),
+      dilrSetsSolved: numOrUndef(setsSolved),
+    };
+
+    if (mock) {
+      // A correction to the numbers only: the analysis and its lessons stay.
+      dispatch({ type: 'mock/update', id: mock.id, patch: scores });
+    } else {
+      dispatch({ type: 'mock/add', mock: { ...scores, kind, lessons: [], analysed: false, weakTopicIds: [] } });
+    }
     onClose();
   };
 
   return (
     <Modal
-      title={kind === 'full' ? 'Record a full mock' : 'Record a sectional'}
+      title={editing ? `Edit ${mock?.name || 'mock'}` : kind === 'full' ? 'Record a full mock' : 'Record a sectional'}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn primary" onClick={save}>
-            Save
+            {editing ? 'Save changes' : 'Save'}
           </button>
           <button type="button" className="btn subtle" onClick={onClose}>
             Cancel
@@ -296,7 +322,9 @@ function MockModal({ kind, today, onClose }: { kind: 'full' | 'sectional'; today
         </div>
       )}
       <p className="tiny faint">
-        Recording the result is step 2 of 7. The mock is not finished until it is analysed and its errors are logged.
+        {editing
+          ? 'Correcting the numbers leaves the analysis, lessons and weak topics you recorded untouched.'
+          : 'Recording the result is step 2 of 7. The mock is not finished until it is analysed and its errors are logged.'}
       </p>
     </Modal>
   );

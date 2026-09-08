@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
 import { addDays, formatDate, formatHours, formatMinutes, shortDayName, weekDates } from '../domain/date';
-import type { ISODate } from '../domain/types';
+import type { ISODate, Task } from '../domain/types';
 import { calculateWeekCapacity } from '../engine/capacity';
 import { detectConflicts } from '../engine/conflicts';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
 import { Callout, CapacityMeter, Card, Collapse, Empty, SectionLabel, Stat, StatGrid } from '../ui/components';
-import { AddTaskModal } from '../ui/components/AddTaskModal';
+import { TaskEditorModal } from '../ui/components/TaskEditor';
 import { TaskCard } from '../ui/components/TaskCard';
 
 export function Week() {
@@ -15,6 +15,7 @@ export function Week() {
   const engine = useEngine();
   const [offset, setOffset] = useState(0);
   const [addingFor, setAddingFor] = useState<ISODate | null | undefined>(undefined);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const weekStart = addDays(currentWeekStart, offset * 7);
   const isCurrent = offset === 0;
@@ -162,19 +163,22 @@ export function Week() {
                 <div className="tiny faint">No tasks</div>
               ) : (
                 dayTasks.map((t) => (
-                  <div
+                  <button
+                    type="button"
                     key={t.id}
                     className={`week-task${t.importance === 'critical' ? ' critical' : ''}${
                       t.status === 'done' ? ' done' : ''
                     }${t.status === 'missed' ? ' missed' : ''}`}
-                    title={t.detail}
+                    title={t.detail ?? 'Edit this task'}
+                    onClick={() => setEditingTask(t)}
+                    aria-label={`Edit: ${t.title}`}
                   >
                     {t.title}
                     <div className="faint" style={{ fontSize: '0.68rem' }}>
                       {formatMinutes(t.estimateMin)} · {TASK_TYPE_LABELS[t.type]}
                       {t.section ? ` · ${SECTION_LABELS[t.section]}` : ''}
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
               <button
@@ -227,8 +231,9 @@ export function Week() {
       </Collapse>
 
       {addingFor !== undefined && (
-        <AddTaskModal defaultDate={addingFor} onClose={() => setAddingFor(undefined)} />
+        <TaskEditorModal defaultDate={addingFor} onClose={() => setAddingFor(undefined)} />
       )}
+      {editingTask && <TaskEditorModal task={editingTask} onClose={() => setEditingTask(null)} />}
     </>
   );
 }

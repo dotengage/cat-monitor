@@ -5,6 +5,7 @@ import type { MissedTaskDecision, Task } from '../../domain/types';
 import { handleMissedTask } from '../../engine/missedTask';
 import { useStore } from '../../state/store';
 import { Callout, Modal, Tag } from './index';
+import { TaskEditorModal } from './TaskEditor';
 
 const DECISION_LABELS: Record<string, string> = {
   RESCHEDULE: 'Reschedule',
@@ -22,6 +23,7 @@ export function TaskCard({ task, compact = false }: { task: Task; compact?: bool
   const [logging, setLogging] = useState(false);
   const [actual, setActual] = useState(String(task.estimateMin));
   const [decision, setDecision] = useState<MissedTaskDecision | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const done = task.status === 'done' || task.status === 'partial';
   const missed = task.status === 'missed';
@@ -103,6 +105,9 @@ export function TaskCard({ task, compact = false }: { task: Task; compact?: bool
               Decide what happens
             </button>
           )}
+          <button type="button" className="btn small" onClick={() => setEditing(true)}>
+            ✎ Edit
+          </button>
           <button
             type="button"
             className="btn small"
@@ -119,6 +124,8 @@ export function TaskCard({ task, compact = false }: { task: Task; compact?: bool
           </button>
         </div>
       )}
+
+      {editing && <TaskEditorModal task={task} onClose={() => setEditing(false)} />}
 
       {decision && (
         <Modal title="Missed task decision" onClose={() => setDecision(null)}>

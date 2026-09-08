@@ -199,6 +199,7 @@ The generated plan is a starting point, not a cage.
 - **Add a task for today** from the Today page, or **for any day** from the Week page (each day has its own `+ Add`).
 - **Plan ahead** with the repeat option: the same task can be dropped onto the next 3, 5, 7 or 14 days. Each copy is a real, separate task, so one bad day does not poison the rest.
 - **Your tasks are yours.** They are marked `origin: user`, which means regenerating a week leaves them untouched while auto-generated filler is replaced.
+- **Everything stays editable.** Tap any task on the Week calendar, or use *Edit* on a task card, to change its wording, day, duration, type, section, importance or energy — or delete it. Moving a missed task back onto a day puts it live again; clearing the day sends it to the backlog.
 - **Missing one behaves identically** to missing generated work: the nine-step decision runs, proposes reschedule / shorten / combine / postpone / remove with its reasoning, and you can always override with *Keep it*, *Send to backlog* or *Remove*.
 - The **importance** you choose is what decides that outcome — critical work is protected, optional work is the first thing dropped when the week is full.
 
@@ -224,7 +225,7 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 
 **Error log.** Twelve error categories, each entry carrying date, section, topic, question reference, what went wrong, the corrected approach, a revisit date and resolution state. Error history feeds directly into what gets planned next: repeated types raise the priority of the matching topics and generate error-review tasks.
 
-**Mocks.** A mock is only complete when it has been attempted, recorded, analysed, its errors classified, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
+**Mocks.** Scores can be corrected after the fact with *Edit scores* — the analysis, lessons and weak topics you recorded stay attached, and the corrected percentile flows straight into the trajectory and feasibility engine. A mock is only complete when it has been attempted, recorded, analysed, its errors classified, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
 
 **Trajectory.** Percentile history is smoothed (most recent mocks weighted highest) and projected forward with a damped slope, crediting at most four weeks of continued improvement. A steep early trend cannot silently declare a distant target already achieved. With no mocks the answer is `Target feasibility: UNCONFIRMED` — not an optimistic guess.
 
