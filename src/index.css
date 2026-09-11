@@ -990,3 +990,68 @@ tr.is-today td { background: var(--accent-soft); }
 .menu button:hover { background: var(--surface-2); }
 .menu button.danger { color: var(--risk); }
 .menu button.danger:hover { background: var(--risk-soft); }
+
+/* ---------------- Charts ---------------- */
+
+.chart-wrap { position: relative; }
+
+/*
+ * Width-driven, not height-driven. With a fixed height attribute the default
+ * preserveAspectRatio letterboxes the plot and leaves dead space either side,
+ * so let the width fill and the height follow the viewBox ratio.
+ */
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.chart-dot { transition: r var(--fast) var(--ease); }
+
+.chart-bar-group { transition: opacity var(--fast) ease; }
+.chart-bar-group rect { transition: y 0.45s var(--ease), height 0.45s var(--ease); }
+
+.chart-tip {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 8px 10px;
+  min-width: 116px;
+  pointer-events: none;
+  z-index: 5;
+  animation: fade 0.12s ease both;
+}
+
+.chart-tip-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 5px;
+}
+
+.chart-tip-row { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; line-height: 1.7; }
+.chart-tip-name { color: var(--text-muted); margin-right: auto; }
+.chart-tip-value { font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.chart-tip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+  border: 1px solid transparent;
+}
+
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 0.78rem; color: var(--text-muted); }
+.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.hbar .meter > span { transition: width 0.5s var(--ease); }

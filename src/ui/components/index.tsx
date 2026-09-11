@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { TrackStatus, WorkloadHealth } from '../../domain/types';
 
 /* ------------------------------------------------------------------ */
@@ -203,10 +204,25 @@ export function Modal({
     };
     document.addEventListener('keydown', onKey);
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+    // Stop the page scrolling underneath the sheet.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [onClose]);
 
-  return (
+  /*
+   * Rendered into <body> rather than in place.
+   *
+   * Modals are opened from inside cards, and those cards carry the page's
+   * entrance animation. A transformed ancestor becomes the containing block
+   * for `position: fixed` descendants, so an in-place modal gets sized and
+   * stacked against its card instead of the viewport - which put it behind
+   * the following cards. A portal sidesteps ancestor transforms entirely.
+   */
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="modal-head">
@@ -218,7 +234,8 @@ export function Modal({
         {children}
         {footer && <div className="btn-group" style={{ marginTop: 14 }}>{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
