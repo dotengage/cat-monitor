@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { TrackStatus, WorkloadHealth } from '../../domain/types';
 
@@ -13,6 +13,10 @@ export function Card({
   children,
   flush,
   id,
+  span,
+  onOpen,
+  openLabel = 'Open',
+  accent,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -20,16 +24,50 @@ export function Card({
   children?: ReactNode;
   flush?: boolean;
   id?: string;
+  /** Columns to occupy inside a `.dash-grid`. Ignored elsewhere. */
+  span?: 2 | 3;
+  /** Makes the whole card a shortcut to somewhere else. */
+  onOpen?: () => void;
+  openLabel?: string;
+  accent?: boolean;
 }) {
+  /*
+   * A card that opens something is clickable anywhere, but it also contains
+   * real controls - task buttons, menus, disclosure triangles. Clicking those
+   * must not also navigate, so anything that is already interactive claims
+   * the click first. Keyboard users get the explicit Open button instead,
+   * which is why the card itself is not focusable.
+   */
+  const handleClick = onOpen
+    ? (e: ReactMouseEvent<HTMLElement>) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('button, a, input, select, textarea, label, summary, [role="menu"]')) return;
+        if (window.getSelection()?.toString()) return;
+        onOpen();
+      }
+    : undefined;
+
+  const classes = ['card'];
+  if (flush) classes.push('flush');
+  if (span) classes.push(`span-${span}`);
+  if (accent) classes.push('accent');
+  if (onOpen) classes.push('is-openable');
+
   return (
-    <section className={`card${flush ? ' flush' : ''}`} id={id}>
-      {(title || action) && (
+    <section className={classes.join(' ')} id={id} onClick={handleClick}>
+      {(title || action || onOpen) && (
         <div className="card-head">
           <div>
             {typeof title === 'string' ? <h2>{title}</h2> : title}
             {subtitle && <div className="small muted">{subtitle}</div>}
           </div>
-          {action}
+          {action ??
+            (onOpen && (
+              <button type="button" className="card-open" onClick={onOpen}>
+                {openLabel}
+                <span aria-hidden="true">›</span>
+              </button>
+            ))}
         </div>
       )}
       {children}
@@ -122,6 +160,16 @@ export function CapacityMeter({
       <span className="used" style={{ width: pct(used) }} />
       {over > 0 && <span className="over" style={{ width: pct(over) }} />}
       <span className="buffer" style={{ width: pct(bufferMin) }} />
+    </div>
+  );
+}
+
+/** A single-value progress bar for "how far along this goal is". */
+export function Progress({ value, max, tone = 'accent' }: { value: number; max: number; tone?: 'accent' | 'ok' | 'warn' | 'risk' }) {
+  const pct = Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
+  return (
+    <div className={`progress ${tone}`} role="img" aria-label={`${Math.round(pct)} percent of the way there`}>
+      <span style={{ width: `${pct}%` }} />
     </div>
   );
 }

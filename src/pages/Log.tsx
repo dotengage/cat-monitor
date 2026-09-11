@@ -63,11 +63,6 @@ export function Log() {
             value={`${Math.round(stats.today.score * 100)}%`}
             sub={`${stats.today.done} of ${stats.today.total} habits`}
           />
-          <Stat
-            label="Consistency"
-            value={`${Math.round(stats.consistency * 100)}%`}
-            sub="of logged days hit the mark"
-          />
         </StatGrid>
         {stats.currentStreak === 0 && !stats.today.untouched && stats.today.total > 0 && (
           <Callout tone="warn">

@@ -200,6 +200,20 @@ a:hover { text-decoration: underline; }
 .page-enter > *:nth-child(5) { animation-delay: 130ms; }
 .page-enter > *:nth-child(n + 6) { animation-delay: 150ms; }
 
+/*
+ * The dashboard is a grid, so its cards are grandchildren of `.page-enter`
+ * and would otherwise arrive as one block. Animate the boxes instead of the
+ * container - which also keeps a transform off the grid itself.
+ */
+.page-enter > .dash-grid { animation: none; }
+.page-enter > .dash-grid > * { animation: rise 0.34s var(--ease) both; }
+.page-enter > .dash-grid > *:nth-child(1) { animation-delay: 20ms; }
+.page-enter > .dash-grid > *:nth-child(2) { animation-delay: 55ms; }
+.page-enter > .dash-grid > *:nth-child(3) { animation-delay: 85ms; }
+.page-enter > .dash-grid > *:nth-child(4) { animation-delay: 110ms; }
+.page-enter > .dash-grid > *:nth-child(5) { animation-delay: 130ms; }
+.page-enter > .dash-grid > *:nth-child(n + 6) { animation-delay: 150ms; }
+
 /* ---------------- Layout ---------------- */
 
 .app-shell {
@@ -380,6 +394,25 @@ a:hover { text-decoration: underline; }
 
 .card.flush { padding: 0; overflow: hidden; }
 
+/* Column layout so a card's trailing stats can sit against its bottom edge. */
+.dash-grid > .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-grid > .card.flush { display: block; }
+
+/*
+ * Cards in a row stretch to the tallest, so an empty one would otherwise
+ * leave its message stranded at the top over a pool of dead space.
+ */
+.dash-grid > .card > .empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .card-head {
   display: flex;
   align-items: flex-start;
@@ -400,6 +433,210 @@ a:hover { text-decoration: underline; }
 @media (min-width: 760px) {
   .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---------------- Dashboard grid ---------------- */
+
+/*
+ * One column on a phone, two on a tablet, three on a desktop. Cards stretch
+ * to the tallest in their row so a dashboard reads as rows of boxes rather
+ * than a ragged collage.
+ */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.dash-grid > .card { margin-bottom: 0; }
+
+@media (min-width: 720px) {
+  .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-grid > .span-2,
+  .dash-grid > .span-3 { grid-column: span 2; }
+}
+
+@media (min-width: 1060px) {
+  .dash-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dash-grid > .span-2 { grid-column: span 2; }
+  .dash-grid > .span-3 { grid-column: span 3; }
+}
+
+/*
+ * A card that is a shortcut somewhere.
+ *
+ * The lift uses `translate` rather than `transform` on purpose: the entrance
+ * animation keyframes animate `transform`, and a filling animation outranks a
+ * normal declaration, so a `transform` hover would simply never apply.
+ */
+.card.is-openable {
+  cursor: pointer;
+  transition: translate var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.card.is-openable:hover {
+  translate: 0 -2px;
+  box-shadow: var(--shadow);
+  border-color: var(--border-strong);
+}
+
+.card.is-openable:active { translate: 0 0; }
+.card.is-openable:hover .card-open { color: var(--accent); }
+.card.is-openable:hover .card-open span { translate: 2px 0; }
+
+.card-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease);
+}
+
+.card-open span {
+  font-size: 1rem;
+  line-height: 1;
+  transition: translate var(--fast) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.is-openable:hover { translate: none; }
+  .card.is-openable:hover .card-open span { translate: none; }
+}
+
+/* ---------------- Dashboard pieces ---------------- */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.countdown {
+  text-align: right;
+  margin-right: 6px;
+}
+
+.countdown .num {
+  font-size: 1.6rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 13px 15px;
+  margin-bottom: 14px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-lg);
+  background: var(--warn-soft);
+  cursor: pointer;
+  transition: translate var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+
+.alert-banner:hover { translate: 0 -1px; box-shadow: var(--shadow); }
+.alert-icon { display: flex; color: var(--warn); }
+.alert-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.alert-chevron { color: var(--text-muted); font-size: 1.2rem; line-height: 1; }
+
+.lead {
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.next-action {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.next-action p { margin: 0; }
+.next-action p + p { margin-top: 5px; }
+.next-action .section-label { margin-top: 0; }
+
+.goal-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.goal-value { font-size: 1.9rem; font-weight: 650; line-height: 1; }
+
+.goal-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.progress {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width var(--normal) var(--ease);
+}
+
+.progress.ok > span { background: var(--ok); }
+.progress.warn > span { background: var(--warn); }
+.progress.risk > span { background: var(--risk); }
+
+/* Small supporting numbers pinned to the bottom of a dashboard card. */
+.mini-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mini-stats .mono { color: var(--text); font-weight: 650; }
+
+.insight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 760px) {
+  .insight-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.insight-list li {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
 }
 
 /* ---------------- Utilities ---------------- */
