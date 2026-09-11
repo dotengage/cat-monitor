@@ -7,6 +7,7 @@ import { buildEstimationModel } from '../engine/estimation';
 import { useStore } from '../state/store';
 import { BarPairChart, ChartLegend, HBarList, TrendChart } from '../ui/charts';
 import { Card, Collapse, Empty, Stat, StatGrid } from '../ui/components';
+import { buildAnalyticsReport, reportFilename } from '../export/reports';
 
 export function Analytics() {
   const { state, today, weekStart } = useStore();
@@ -57,6 +58,14 @@ export function Analytics() {
           <h1>Analytics</h1>
           <div className="sub">Every chart here answers a question. Nothing decorative.</div>
         </div>
+        <button
+          type="button"
+          className="btn small"
+          onClick={() => buildAnalyticsReport(state, today).save(reportFilename('analytics', today))}
+          title="Download the complete analytics report as a PDF"
+        >
+          Export PDF
+        </button>
       </div>
 
       <Card title="Plan vs reality" subtitle="Planned against actual focused hours, by week">

@@ -68,26 +68,26 @@ export function Today({ navigate }: { navigate: (r: RouteKey) => void }) {
       <Card title="Quick update">
         <div className="btn-group">
           <button type="button" className="btn small" onClick={() => setEnergy(2)}>
-            😴 Low energy today
+            Low energy today
           </button>
           <button type="button" className="btn small" onClick={() => setModal('unexpected')}>
-            🚨 Unexpected commitment
+            Unexpected commitment
           </button>
           <button type="button" className="btn small" onClick={() => setModal('travel')}>
-            ✈ Travelling
+            Travelling
           </button>
           <button
             type="button"
             className="btn small"
             onClick={() => dispatch({ type: 'week/rebalance', weekStart, today })}
           >
-            📈 Finished early - pull work forward
+            Finished early
           </button>
           <button type="button" className="btn small" onClick={() => navigate('mocks')}>
-            🏁 Log a mock
+            Log a mock
           </button>
           <button type="button" className="btn small" onClick={() => setModal('checkin')}>
-            📝 End-of-day check-in
+            End-of-day check-in
           </button>
         </div>
       </Card>

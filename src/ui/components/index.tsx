@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TrackStatus, WorkloadHealth } from '../../domain/types';
 
 /* ------------------------------------------------------------------ */
@@ -251,4 +251,75 @@ export function Collapse({ title, children, open }: { title: ReactNode; children
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return <div className="section-label">{children}</div>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Overflow menu                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Secondary actions, tucked away.
+ *
+ * A task has six things you can do to it. Showing all six on every card is
+ * what made the plan feel like a control panel rather than a plan, so the two
+ * you actually use stay visible and the rest live behind this.
+ */
+export function ActionMenu({
+  label = 'More actions',
+  items,
+}: {
+  label?: string;
+  items: { label: string; onClick: () => void; danger?: boolean }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="menu-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="btn small subtle menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span aria-hidden="true">···</span>
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className={item.danger ? 'danger' : undefined}
+              onClick={() => {
+                setOpen(false);
+                item.onClick();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

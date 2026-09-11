@@ -4,7 +4,7 @@ import { formatDate, formatMinutes } from '../../domain/date';
 import type { MissedTaskDecision, Task } from '../../domain/types';
 import { handleMissedTask } from '../../engine/missedTask';
 import { useStore } from '../../state/store';
-import { Callout, Modal, Tag } from './index';
+import { ActionMenu, Callout, Modal, Tag } from './index';
 import { TaskEditorModal } from './TaskEditor';
 
 const DECISION_LABELS: Record<string, string> = {
@@ -88,17 +88,9 @@ export function TaskCard({ task, compact = false }: { task: Task; compact?: bool
       ) : (
         <div className="task-actions">
           {!done && (
-            <>
-              <button type="button" className="btn small primary" onClick={() => setLogging(true)}>
-                ✓ Complete
-              </button>
-              <button type="button" className="btn small" onClick={() => dispatch({ type: 'task/miss', id: task.id })}>
-                ✕ Missed
-              </button>
-              <button type="button" className="btn small" onClick={() => dispatch({ type: 'task/postpone', id: task.id })}>
-                ⏸ Postpone
-              </button>
-            </>
+            <button type="button" className="btn small primary" onClick={() => setLogging(true)}>
+              Complete
+            </button>
           )}
           {missed && (
             <button type="button" className="btn small primary" onClick={openDecision}>
@@ -106,22 +98,30 @@ export function TaskCard({ task, compact = false }: { task: Task; compact?: bool
             </button>
           )}
           <button type="button" className="btn small" onClick={() => setEditing(true)}>
-            ✎ Edit
+            Edit
           </button>
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => dispatch({ type: 'task/update', id: task.id, patch: { locked: !task.locked } })}
-          >
-            {task.locked ? 'Unprotect' : 'Protect'}
-          </button>
-          <button
-            type="button"
-            className="btn small danger"
-            onClick={() => dispatch({ type: 'task/remove', id: task.id, reason: 'Removed by user.' })}
-          >
-            🗑 Remove
-          </button>
+          {/* Six buttons on every card turned the plan into a control panel.
+              The two you reach for stay out; the rest live in here. */}
+          <ActionMenu
+            label={`More actions for ${task.title}`}
+            items={[
+              ...(done
+                ? []
+                : [
+                    { label: 'Mark as missed', onClick: () => dispatch({ type: 'task/miss' as const, id: task.id }) },
+                    { label: 'Postpone to backlog', onClick: () => dispatch({ type: 'task/postpone' as const, id: task.id }) },
+                  ]),
+              {
+                label: task.locked ? 'Remove protection' : 'Protect from rebalancing',
+                onClick: () => dispatch({ type: 'task/update', id: task.id, patch: { locked: !task.locked } }),
+              },
+              {
+                label: 'Remove task',
+                danger: true,
+                onClick: () => dispatch({ type: 'task/remove', id: task.id, reason: 'Removed by user.' }),
+              },
+            ]}
+          />
         </div>
       )}
 

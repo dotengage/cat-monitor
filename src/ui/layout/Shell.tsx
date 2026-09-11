@@ -1,18 +1,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Icon, type IconName } from './icons';
 
 export const ROUTES = [
-  { key: 'home', label: 'Home', glyph: '◈', primary: true },
-  { key: 'today', label: 'Today', glyph: '◉', primary: true },
-  { key: 'week', label: 'Week', glyph: '▤', primary: true },
-  { key: 'log', label: 'Log', glyph: '✎', primary: true },
-  { key: 'cat', label: 'CAT', glyph: '◎', primary: false },
-  { key: 'goals', label: 'Goals', glyph: '⌖', primary: false },
-  { key: 'mocks', label: 'Mocks', glyph: '▦', primary: false },
-  { key: 'errors', label: 'Errors', glyph: '⚑', primary: false },
-  { key: 'review', label: 'Review', glyph: '⟳', primary: false },
-  { key: 'analytics', label: 'Analytics', glyph: '▚', primary: false },
-  { key: 'settings', label: 'Settings', glyph: '⚙', primary: false },
+  { key: 'home', label: 'Home', icon: 'home', primary: true, group: 'Plan' },
+  { key: 'today', label: 'Today', icon: 'today', primary: true, group: 'Plan' },
+  { key: 'week', label: 'Week', icon: 'week', primary: true, group: 'Plan' },
+  { key: 'log', label: 'Log', icon: 'log', primary: true, group: 'Plan' },
+  { key: 'cat', label: 'CAT readiness', icon: 'cat', primary: false, group: 'Performance' },
+  { key: 'mocks', label: 'Mocks', icon: 'mocks', primary: false, group: 'Performance' },
+  { key: 'errors', label: 'Errors', icon: 'errors', primary: false, group: 'Performance' },
+  { key: 'analytics', label: 'Analytics', icon: 'analytics', primary: false, group: 'Performance' },
+  { key: 'goals', label: 'Goals', icon: 'goals', primary: false, group: 'System' },
+  { key: 'review', label: 'Weekly review', icon: 'review', primary: false, group: 'System' },
+  { key: 'settings', label: 'Settings', icon: 'settings', primary: false, group: 'System' },
 ] as const;
+
+const GROUPS = ['Plan', 'Performance', 'System'] as const;
 
 export type RouteKey = (typeof ROUTES)[number]['key'] | 'more';
 
@@ -61,28 +64,40 @@ export function Shell({
     <div className="app-shell">
       <nav className="sidebar" aria-label="Main navigation">
         <div className="sidebar-brand">
-          <strong>CAT Monitor</strong>
+          <span className="brand-mark" aria-hidden="true">
+            C
+          </span>
           <span>
-            {target}+ percentile · {daysRemaining} days left
+            <strong>CAT Monitor</strong>
+            <span>
+              {target}+ target · {daysRemaining} days left
+            </span>
           </span>
         </div>
-        {ROUTES.map((r) => (
-          <button
-            key={r.key}
-            type="button"
-            className="nav-link"
-            aria-current={route === r.key ? 'page' : undefined}
-            onClick={() => navigate(r.key)}
-          >
-            <span className="glyph" aria-hidden="true">
-              {r.glyph}
-            </span>
-            {r.label}
-          </button>
+
+        {GROUPS.map((group) => (
+          <div key={group}>
+            <div className="nav-group">{group}</div>
+            {ROUTES.filter((r) => r.group === group).map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                className="nav-link"
+                aria-current={route === r.key ? 'page' : undefined}
+                onClick={() => navigate(r.key)}
+              >
+                <span className="glyph">
+                  <Icon name={r.icon as IconName} />
+                </span>
+                {r.label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
 
-      <main className="main" id="main">
+      {/* Keyed by route so each page animates in rather than snapping. */}
+      <main className="main page-enter" id="main" key={route}>
         {children}
       </main>
 
@@ -94,15 +109,15 @@ export function Shell({
             aria-current={route === r.key ? 'page' : undefined}
             onClick={() => navigate(r.key)}
           >
-            <span className="glyph" aria-hidden="true">
-              {r.glyph}
+            <span className="glyph">
+              <Icon name={r.icon as IconName} size={19} />
             </span>
             {r.label}
           </button>
         ))}
         <button type="button" aria-current={route === 'more' ? 'page' : undefined} onClick={() => navigate('more')}>
-          <span className="glyph" aria-hidden="true">
-            ☰
+          <span className="glyph">
+            <Icon name="more" size={19} />
           </span>
           More
         </button>
@@ -117,16 +132,19 @@ export function MorePage({ navigate }: { navigate: (key: RouteKey) => void }) {
       <div className="page-header">
         <h1>More</h1>
       </div>
-      <div className="card">
-        {ROUTES.filter((r) => !r.primary).map((r) => (
-          <button key={r.key} type="button" className="nav-link" onClick={() => navigate(r.key)}>
-            <span className="glyph" aria-hidden="true">
-              {r.glyph}
-            </span>
-            {r.label}
-          </button>
-        ))}
-      </div>
+      {GROUPS.filter((g) => ROUTES.some((r) => r.group === g && !r.primary)).map((group) => (
+        <div className="card" key={group}>
+          <div className="section-label">{group}</div>
+          {ROUTES.filter((r) => r.group === group && !r.primary).map((r) => (
+            <button key={r.key} type="button" className="nav-link" onClick={() => navigate(r.key)}>
+              <span className="glyph">
+                <Icon name={r.icon as IconName} />
+              </span>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      ))}
     </>
   );
 }

@@ -122,7 +122,7 @@ export function Errors() {
                   })
                 }
               >
-                {e.resolved ? 'Reopen' : '✓ Mark resolved'}
+                {e.resolved ? 'Reopen' : 'Mark resolved'}
               </button>
               <button
                 type="button"

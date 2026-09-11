@@ -23,6 +23,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
 - [Installing as a PWA](#installing-as-a-pwa)
+- [PDF reports](#pdf-reports)
 - [Syncing between devices](#syncing-between-devices)
 - [Backup, export and reset](#backup-export-and-reset)
 - [Configuration: changing topics, sections and targets](#configuration-changing-topics-sections-and-targets)
@@ -50,6 +51,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 | **Weekly review** | Seven questions in, a full recalculation and next week's plan out. |
 | **Analytics** | Plan vs reality, mock trends, completion rates, estimate drift, topic accuracy, error distribution, DILR volume. |
 | **Decision log** | Every automatic change is recorded with its reason, and every one can be overridden. |
+| **PDF reports** | One-click export of the complete mock report and analytics report, generated in-app with no dependency and no print dialog. |
 | **Device sync** | Optional. Keeps phone and computer in step through one secret gist in your own GitHub account. Per-record merge, so simultaneous edits on both devices do not overwrite each other. |
 
 ---
@@ -107,10 +109,14 @@ src/
     store.tsx              Reducer + context + debounced persistence.
     useSync.ts             Background sync loop (debounced push, foreground pull).
     useEngine.ts           Single memoised entry point for derived values.
+  export/
+    pdf.ts                 A tiny PDF writer: base-14 fonts, tables, charts.
+    reports.ts             Mock and analytics report builders (pure).
   ui/
     components/            Card, StatusPill, Stat, CapacityMeter, Modal, TaskCard…
     charts/                Hand-rolled SVG charts (no charting library).
     layout/Shell.tsx       Hash router, sidebar (desktop), bottom nav (mobile).
+    layout/icons.tsx       Eleven inline stroke icons.
   pages/                   Home, Today, Week, Log, Goals, CAT, Mocks, Errors,
                            Review, Analytics, Settings, Onboarding.
 ```
@@ -309,6 +315,18 @@ Service workers require HTTPS (or `localhost`). On GitHub Pages that is automati
 
 ---
 
+## PDF reports
+
+**Mocks → Export PDF** produces the complete mock report: summary figures, trajectory with its reasoning, a percentile chart, section readiness, then every mock with its sectional breakdown, notes and lessons, and a flag on any that remain unanalysed.
+
+**Analytics → Export PDF** produces the complete analytics report: feasibility and its evidence, the remaining-workload breakdown, plan vs reality by week, mock and sectional trends, the study log, habits, topic accuracy, error categories and estimation drift.
+
+Both are generated in the app and download as real `.pdf` files — no print dialog, which matters in an installed PWA where printing is unreliable.
+
+The generator is hand-written (`src/export/pdf.ts`, a few KB) rather than a library. The usual choices were a ~600KB dependency that rasterises pages into blurry images, or the browser's print dialog. This emits proper PDF with **selectable, searchable text**, using the base-14 Helvetica faces so no font has to be embedded. Text is folded to ASCII first, since those fonts cannot represent typographic dashes or emoji — and because it keeps byte offsets in the cross-reference table valid.
+
+The tests assert the byte structure, not just that a file appeared: header, trailer, and every cross-reference offset landing exactly on its object.
+
 ## Syncing between devices
 
 Off by default. When enabled, your data lives in **one secret gist in your own GitHub account** — no server, no third-party service, no extra account.
@@ -394,7 +412,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-155 tests across 14 files. The planning engine is pure, so the scenarios are exercised directly:
+168 tests across 15 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |

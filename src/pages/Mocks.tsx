@@ -6,6 +6,7 @@ import { sortedMocks } from '../engine/derive';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
 import { Callout, Card, Empty, Field, Modal, Stat, StatGrid, Tag } from '../ui/components';
+import { buildMockReport, reportFilename } from '../export/reports';
 
 const emptyScore: SectionScore = { score: 0, percentile: 0, attempts: 0, correct: 0, incorrect: 0 };
 
@@ -28,6 +29,15 @@ export function Mocks() {
           <div className="sub">A mock is only complete once it has been analysed.</div>
         </div>
         <div className="btn-group">
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => buildMockReport(state, today).save(reportFilename('mock', today))}
+            disabled={state.mocks.length === 0}
+            title={state.mocks.length === 0 ? 'Record a mock first' : 'Download the full mock report as a PDF'}
+          >
+            Export PDF
+          </button>
           <button type="button" className="btn small" onClick={() => setAdding('sectional')}>
             + Sectional
           </button>
@@ -159,7 +169,7 @@ export function Mocks() {
                 {mock.analysed ? 'Edit analysis' : 'Analyse this mock'}
               </button>
               <button type="button" className="btn small" onClick={() => setEditingMock(mock)}>
-                ✎ Edit scores
+                Edit scores
               </button>
               <button type="button" className="btn small danger" onClick={() => dispatch({ type: 'mock/delete', id: mock.id })}>
                 Delete
