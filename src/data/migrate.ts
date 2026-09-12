@@ -1,4 +1,5 @@
 import { DEFAULT_PLANNING, STATE_VERSION } from '../config/catConfig';
+import { isThemeName } from '../config/themes';
 import type { AppState } from '../domain/types';
 import { createInitialState } from './defaultState';
 
@@ -19,6 +20,10 @@ export function migrate(raw: Partial<AppState>): AppState {
       ...(raw.settings ?? {}),
       planning: { ...DEFAULT_PLANNING, ...(raw.settings?.planning ?? {}) },
       notifications: { ...base.settings.notifications, ...(raw.settings?.notifications ?? {}) },
+      // Added after some users' data was written, and a bad value from an
+      // older or hand-edited payload must not leave the app unthemed.
+      theme: isThemeName(raw.settings?.theme) ? raw.settings.theme : base.settings.theme,
+      brand: { ...base.settings.brand, ...(raw.settings?.brand ?? {}) },
     },
     goals: raw.goals ?? base.goals,
     topics: raw.topics && raw.topics.length > 0 ? raw.topics : base.topics,

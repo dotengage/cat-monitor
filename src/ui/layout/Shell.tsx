@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import type { Brand } from '../../domain/types';
 import { Icon, type IconName } from './icons';
 
 export const ROUTES = [
@@ -45,17 +46,29 @@ export function useRoute(): [RouteKey, (key: RouteKey) => void] {
   return [route, navigate];
 }
 
+/** The square mark: an uploaded image if there is one, otherwise the glyph. */
+export function BrandMark({ brand, size }: { brand: Brand; size?: number }) {
+  const style = size ? { width: size, height: size, fontSize: size * 0.46 } : undefined;
+  return (
+    <span className="brand-mark" aria-hidden="true" style={style}>
+      {brand.image ? <img src={brand.image} alt="" /> : (brand.glyph || 'C')}
+    </span>
+  );
+}
+
 export function Shell({
   route,
   navigate,
   daysRemaining,
   target,
+  brand,
   children,
 }: {
   route: RouteKey;
   navigate: (key: RouteKey) => void;
   daysRemaining: number;
   target: number;
+  brand: Brand;
   children: ReactNode;
 }) {
   const primary = ROUTES.filter((r) => r.primary);
@@ -63,17 +76,21 @@ export function Shell({
   return (
     <div className="app-shell">
       <nav className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-brand">
-          <span className="brand-mark" aria-hidden="true">
-            C
-          </span>
+        {/* The mark and name are editable, so the header doubles as the way in. */}
+        <button
+          type="button"
+          className="sidebar-brand"
+          onClick={() => navigate('settings')}
+          title="Change the name, icon and theme"
+        >
+          <BrandMark brand={brand} />
           <span>
-            <strong>CAT Monitor</strong>
+            <strong>{brand.name}</strong>
             <span>
               {target}+ target · {daysRemaining} days left
             </span>
           </span>
-        </div>
+        </button>
 
         {GROUPS.map((group) => (
           <div key={group}>

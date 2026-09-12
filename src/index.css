@@ -63,7 +63,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme]) {
     --bg: #0f0f11;
     --surface: #17171a;
     --surface-2: #1d1d21;
@@ -119,6 +119,148 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
   --ring: 0 0 0 3px rgba(129, 140, 248, 0.25);
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------
+   Pastel palettes.
+
+   Each one overrides only the tokens that carry the tint - surfaces,
+   borders and the accent - and inherits the rest, including the semantic
+   ok / warn / risk colours, from the light palette above. Those three have
+   to stay recognisable as themselves in every theme, so they are not
+   restyled per palette.
+   ------------------------------------------------------------------ */
+
+:root[data-theme='mint'] {
+  --bg: #f2f8f4;
+  --surface: #ffffff;
+  --surface-2: #eef6f1;
+  --surface-3: #e3efe8;
+  --border: #dcebe2;
+  --border-strong: #c6ddd0;
+  --text: #14211b;
+  --text-muted: #5d7168;
+  --text-faint: #93a69c;
+  --accent: #1f8a63;
+  --accent-hover: #187254;
+  --accent-soft: #e3f4ec;
+  --neutral-soft: #e8f1ec;
+  --ring: 0 0 0 3px rgba(31, 138, 99, 0.22);
+}
+
+:root[data-theme='lavender'] {
+  --bg: #f6f4fb;
+  --surface: #ffffff;
+  --surface-2: #f2effa;
+  --surface-3: #e9e4f6;
+  --border: #e5e0f2;
+  --border-strong: #d2cae8;
+  --text: #1c1830;
+  --text-muted: #6b6485;
+  --text-faint: #a09ab4;
+  --accent: #7c5cd6;
+  --accent-hover: #6b4ac6;
+  --accent-soft: #efe9fc;
+  --neutral-soft: #eeebf7;
+  --ring: 0 0 0 3px rgba(124, 92, 214, 0.22);
+}
+
+:root[data-theme='blush'] {
+  --bg: #fdf5f6;
+  --surface: #ffffff;
+  --surface-2: #fbeff1;
+  --surface-3: #f7e3e7;
+  --border: #f2e0e4;
+  --border-strong: #e8c9d0;
+  --text: #2a1a20;
+  --text-muted: #7d6670;
+  --text-faint: #b09aa2;
+  --accent: #c44a70;
+  --accent-hover: #ae3c60;
+  --accent-soft: #fdeaf0;
+  --neutral-soft: #f7ecee;
+  --ring: 0 0 0 3px rgba(196, 74, 112, 0.2);
+}
+
+:root[data-theme='apricot'] {
+  --bg: #fdf6f0;
+  --surface: #ffffff;
+  --surface-2: #fbf0e7;
+  --surface-3: #f7e6d8;
+  --border: #f3e2d4;
+  --border-strong: #e9cdb6;
+  --text: #2b1f16;
+  --text-muted: #7d6b5d;
+  --text-faint: #b2a191;
+  --accent: #bc5b28;
+  --accent-hover: #a44d20;
+  --accent-soft: #fdeee0;
+  --neutral-soft: #f7eee5;
+  --ring: 0 0 0 3px rgba(188, 91, 40, 0.2);
+}
+
+:root[data-theme='sky'] {
+  --bg: #f1f7fc;
+  --surface: #ffffff;
+  --surface-2: #ecf4fb;
+  --surface-3: #e0edf8;
+  --border: #dcebf6;
+  --border-strong: #c3dcee;
+  --text: #12202b;
+  --text-muted: #5b6e7c;
+  --text-faint: #92a4b0;
+  --accent: #2679bb;
+  --accent-hover: #1e669f;
+  --accent-soft: #e4f1fb;
+  --neutral-soft: #e9f1f8;
+  --ring: 0 0 0 3px rgba(38, 121, 187, 0.22);
+}
+
+:root[data-theme='sand'] {
+  --bg: #faf7f0;
+  --surface: #ffffff;
+  --surface-2: #f6f1e7;
+  --surface-3: #efe8da;
+  --border: #ece5d7;
+  --border-strong: #dcd1bd;
+  --text: #241f16;
+  --text-muted: #6f6758;
+  --text-faint: #a79e8c;
+  --accent: #8d6f2b;
+  --accent-hover: #775d23;
+  --accent-soft: #f7f0df;
+  --neutral-soft: #f3eee3;
+  --ring: 0 0 0 3px rgba(141, 111, 43, 0.22);
+}
+
+/* A softer dark than the charcoal one: blue-grey surfaces, pastel accent. */
+:root[data-theme='midnight'] {
+  --bg: #14161d;
+  --surface: #1b1e27;
+  --surface-2: #21252f;
+  --surface-3: #2a2f3b;
+  --border: #2a2f3b;
+  --border-strong: #3d4454;
+  --text: #e8eaf0;
+  --text-muted: #9aa2b4;
+  --text-faint: #6d7488;
+  --accent: #9db4ff;
+  --accent-hover: #b1c3ff;
+  --accent-soft: #1f2740;
+  --accent-ink: #14161d;
+  --ok: #6ee7b7;
+  --ok-soft: #11261f;
+  --warn: #e8bb63;
+  --warn-soft: #2a2415;
+  --risk: #fb9090;
+  --risk-soft: #2e1a1c;
+  --neutral: #9aa2b4;
+  --neutral-soft: #242833;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --ring: 0 0 0 3px rgba(157, 180, 255, 0.25);
   color-scheme: dark;
 }
 
@@ -238,9 +380,20 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 4px 8px 18px;
+  width: 100%;
+  padding: 6px 8px 16px;
   margin-bottom: 6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background-color var(--fast) var(--ease);
 }
+
+.sidebar-brand:hover { background: var(--surface-2); }
 
 .brand-mark {
   width: 36px;
@@ -254,7 +407,106 @@ a:hover { text-decoration: underline; }
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.03em;
+  overflow: hidden;
+  line-height: 1;
 }
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------------- Appearance controls ---------------- */
+
+.theme-groups { display: grid; gap: 14px; }
+.theme-groups .section-label:first-child { margin-top: 0; }
+
+.theme-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 8px;
+}
+
+.theme-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease);
+}
+
+.theme-swatch:hover { border-color: var(--border-strong); }
+
+.theme-swatch[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* The dot is a miniature of the theme: its page colour, ringed and dotted
+   with its accent, so the choice is legible without reading the label. */
+.theme-swatch .dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: grid;
+  place-items: center;
+}
+
+.theme-swatch .dot > span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: block;
+}
+
+.theme-swatch .name { font-size: 0.72rem; font-weight: 600; }
+
+.brand-editor {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand-preview {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  border-radius: 18px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-size: 1.7rem;
+  font-weight: 700;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.brand-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.brand-fields {
+  flex: 1;
+  min-width: 220px;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(80px, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.brand-fields .field { margin-bottom: 0; }
 
 .sidebar-brand strong { display: block; font-size: 0.9rem; letter-spacing: -0.015em; }
 .sidebar-brand span { font-size: 0.75rem; color: var(--text-muted); }
@@ -452,7 +704,17 @@ a:hover { text-decoration: underline; }
 .dash-grid > .card { margin-bottom: 0; }
 
 @media (min-width: 720px) {
-  .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /*
+   * Two columns cannot hold a wide card beside a narrow one, so a wide card
+   * following a narrow one leaves a hole. `dense` backfills it with the next
+   * card that fits. Only needed here: at three columns the spans already tile
+   * exactly, so the flow is left alone and reading order is preserved.
+   */
+  .dash-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row dense;
+  }
+
   .dash-grid > .span-2,
   .dash-grid > .span-3 { grid-column: span 2; }
 }

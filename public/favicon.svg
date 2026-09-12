@@ -1,7 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0b1220"/>
-  <rect x="12" y="38" width="8" height="14" rx="2" fill="#4f7df3"/>
-  <rect x="24" y="30" width="8" height="22" rx="2" fill="#4f7df3"/>
-  <rect x="36" y="22" width="8" height="30" rx="2" fill="#6d97ff"/>
-  <rect x="48" y="12" width="8" height="40" rx="2" fill="#34d399"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CAT Monitor">
+  <defs>
+    <linearGradient id="arc" x1="12" y1="52" x2="52" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#a5b4fc"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="13.5" fill="#0e1016"/>
+  <path d="M19.27 44.73A18 18 0 1 1 44.73 44.73" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="7" stroke-linecap="round"/>
+  <path d="M19.27 44.73A18 18 0 1 1 48.31 24.39" fill="none" stroke="url(#arc)" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="48.31" cy="24.39" r="5" fill="#ffffff"/>
 </svg>

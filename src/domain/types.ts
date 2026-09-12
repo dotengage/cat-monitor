@@ -1,3 +1,4 @@
+import type { ThemeName } from '../config/themes';
 import type { ISODate } from './date';
 
 export type { ISODate };
@@ -602,8 +603,18 @@ export interface PlanningParams {
   habitStreakThreshold: number;
 }
 
+/** Name and mark shown in the sidebar, the browser tab and the installed app. */
+export interface Brand {
+  name: string;
+  /** One or two characters - a letter or an emoji - used when there is no image. */
+  glyph: string;
+  /** Data URL of an uploaded mark, downscaled before it is stored. */
+  image?: string;
+}
+
 export interface Settings extends Entity {
-  theme: 'system' | 'light' | 'dark';
+  theme: ThemeName;
+  brand: Brand;
   weekStartsOn: 0 | 1;
   mockProviders: string[];
   planning: PlanningParams;

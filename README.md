@@ -23,6 +23,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
 - [Installing as a PWA](#installing-as-a-pwa)
+- [Themes, name and icon](#themes-name-and-icon)
 - [PDF reports](#pdf-reports)
 - [Syncing between devices](#syncing-between-devices)
 - [Backup, export and reset](#backup-export-and-reset)
@@ -314,6 +315,20 @@ Once installed it launches standalone, works offline after the first visit, and 
 Service workers require HTTPS (or `localhost`). On GitHub Pages that is automatic. When running `npm run dev` the service worker is deliberately not registered, so you never debug against a stale cache.
 
 ---
+
+## Themes, name and icon
+
+**Settings → Theme** offers ten palettes: System, Light, six pastels (Mint, Lavender, Blush, Apricot, Sky, Sand) and two darks (Dark, Midnight).
+
+Nothing in the interface hard-codes a colour. Buttons, pills, meters, charts and the PDF-free parts of the UI all read the same CSS custom properties, so a palette is a block of tokens in `src/index.css` against `:root[data-theme='<id>']` plus one entry in `src/config/themes.ts` — the picker builds itself from that list.
+
+The pastels override only the tokens that carry the tint: surfaces, borders and the accent. The semantic `ok` / `warn` / `risk` colours are deliberately *not* restyled per palette — a warning has to stay recognisable as a warning in every theme. Every accent was checked for contrast against white at or above the baseline indigo's own ratio, so button labels stay legible.
+
+`System` sets no attribute at all, which is exactly what the `prefers-color-scheme` block keys off (`:root:not([data-theme])`). Choosing any named palette opts out of following the OS.
+
+**Settings → Name and icon** changes the name and mark shown in the sidebar, the browser tab and the installed app. The mark can be a letter, an emoji, or an uploaded image — cropped square and stored at 128px inside your own data, so it travels with sync and backups instead of living only on one device. An uploaded mark also becomes the browser-tab favicon.
+
+The default icon (`public/favicon.svg`) is an almost-complete progress ring with a dot at its leading edge. The raster sizes are generated from the same geometry by `scripts/generate-icons.mjs` — signed-distance shapes rasterised and deflated into PNG by hand, no image dependency — so `npm run icons` regenerates all four without them drifting from the SVG.
 
 ## PDF reports
 

@@ -6,6 +6,7 @@ import { getStorageStatus, type StorageStatus } from '../data/db';
 import { repository, type BackupMeta } from '../data/repository';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Collapse, Empty, Field, Modal } from '../ui/components';
+import { BrandEditor, ThemePicker } from '../ui/components/Appearance';
 import { DeleteSpaceModal, RenameSpaceModal, SyncSetup } from '../ui/components/SyncSetup';
 
 export function Settings() {
@@ -240,17 +241,23 @@ export function Settings() {
         />
       </Card>
 
-      <Card title="Appearance and reminders">
-        <ChoiceGroup
-          legend="Theme"
+      <Card title="Name and icon" subtitle="What shows in the sidebar, the browser tab and the installed app.">
+        <BrandEditor
+          brand={settings.brand}
+          onChange={(patch) =>
+            dispatch({ type: 'settings/update', patch: { brand: { ...settings.brand, ...patch } } })
+          }
+        />
+      </Card>
+
+      <Card title="Theme" subtitle="Every colour in the app follows this, buttons and charts included.">
+        <ThemePicker
           value={settings.theme}
-          options={[
-            { value: 'system' as const, label: 'System' },
-            { value: 'light' as const, label: 'Light' },
-            { value: 'dark' as const, label: 'Dark' },
-          ]}
           onChange={(theme) => dispatch({ type: 'settings/update', patch: { theme } })}
         />
+      </Card>
+
+      <Card title="Reminders">
         <label className="row small" style={{ marginBottom: 8 }}>
           <input
             type="checkbox"

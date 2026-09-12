@@ -8,6 +8,7 @@ import {
   STATE_VERSION,
   TOPIC_SEEDS,
 } from '../config/catConfig';
+import { DEFAULT_BRAND_GLYPH, DEFAULT_BRAND_NAME } from '../config/themes';
 import { today as todayISO } from '../domain/date';
 import { nowISO, uid } from '../domain/ids';
 import type { AppState, EnergyLevel, Goal, Habit, Settings, Topic, UserProfile } from '../domain/types';
@@ -70,6 +71,7 @@ export function createSettings(): Settings {
     createdAt: stamp,
     updatedAt: stamp,
     theme: 'light',
+    brand: { name: DEFAULT_BRAND_NAME, glyph: DEFAULT_BRAND_GLYPH },
     weekStartsOn: 1,
     mockProviders: [...DEFAULT_MOCK_PROVIDERS],
     planning: { ...DEFAULT_PLANNING, energyFactors: { ...DEFAULT_PLANNING.energyFactors } },

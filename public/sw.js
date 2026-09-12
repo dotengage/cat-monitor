@@ -2,7 +2,7 @@
    Dependency-free: precaches the shell, then caches build assets on demand.
    All user data lives in IndexedDB, never in the cache. */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `cat-monitor-shell-${VERSION}`;
 const ASSET_CACHE = `cat-monitor-assets-${VERSION}`;
 

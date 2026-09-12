@@ -332,6 +332,36 @@ describe('persistence shape', () => {
     expect(migrated.commitments[0].reducesCapacity).toBe(false);
   });
 
+  it('keeps a chosen theme and rejects one it does not recognise', () => {
+    const themed = JSON.parse(JSON.stringify(onboarded())) as AppState;
+    themed.settings = { ...themed.settings, theme: 'mint' };
+    expect(migrate(themed).settings.theme).toBe('mint');
+
+    const bogus = JSON.parse(JSON.stringify(onboarded())) as AppState;
+    bogus.settings = { ...bogus.settings, theme: 'neon-disco' as unknown as AppState['settings']['theme'] };
+    // An unknown palette has no stylesheet behind it, so it must not survive.
+    expect(migrate(bogus).settings.theme).toBe('light');
+  });
+
+  it('gives data written before the brand existed a default name and glyph', () => {
+    const legacy = JSON.parse(JSON.stringify(onboarded())) as AppState;
+    delete (legacy.settings as Partial<AppState['settings']>).brand;
+
+    const migrated = migrate(legacy);
+    expect(migrated.settings.brand.name).toBe('CAT Monitor');
+    expect(migrated.settings.brand.glyph).toBe('C');
+    expect(migrated.settings.brand.image).toBeUndefined();
+  });
+
+  it('keeps a brand the user has customised', () => {
+    const branded = JSON.parse(JSON.stringify(onboarded())) as AppState;
+    branded.settings = { ...branded.settings, brand: { name: 'My Plan', glyph: '🎯' } };
+
+    const migrated = migrate(branded);
+    expect(migrated.settings.brand.name).toBe('My Plan');
+    expect(migrated.settings.brand.glyph).toBe('🎯');
+  });
+
   it('resets cleanly', () => {
     const next = run(onboarded(), { type: 'reset' });
     expect(next.profile.onboarded).toBe(false);

@@ -1,61 +1,149 @@
 /**
- * Generates the PWA icons as real PNG files.
+ * Renders the app icon to PNG without a rasteriser dependency.
  *
- * No image dependencies: the pixels are drawn by hand and encoded with Node's
- * built-in zlib. Run with `npm run icons` after changing the mark.
+ * The artwork is four signed-distance shapes - a rounded square, a track arc,
+ * a progress arc and a cap dot - sampled with a one-pixel smoothstep for
+ * antialiasing, then deflated into a PNG by hand. Keeping it in code means the
+ * raster icons cannot drift from public/favicon.svg.
  */
 import { deflateSync } from 'node:zlib';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
 
-const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const smooth = (d) => clamp01(0.5 - d); // coverage from a signed distance in px
 
-const BG = [11, 18, 32, 255];
-const BARS = [
-  { x: 0.14, w: 0.15, h: 0.24, color: [60, 106, 224, 255] },
-  { x: 0.33, w: 0.15, h: 0.38, color: [79, 125, 243, 255] },
-  { x: 0.52, w: 0.15, h: 0.52, color: [109, 151, 255, 255] },
-  { x: 0.71, w: 0.15, h: 0.68, color: [52, 211, 153, 255] },
-];
-const BASELINE = 0.83;
+function roundedRect(px, py, w, h, r) {
+  const qx = Math.abs(px - w / 2) - (w / 2 - r);
+  const qy = Math.abs(py - h / 2) - (h / 2 - r);
+  const ax = Math.max(qx, 0);
+  const ay = Math.max(qy, 0);
+  return Math.min(Math.max(qx, qy), 0) + Math.hypot(ax, ay) - r;
+}
 
-function crc32(buf) {
-  let c;
-  const table = crc32.table ?? (crc32.table = (() => {
-    const t = new Int32Array(256);
-    for (let n = 0; n < 256; n += 1) {
-      c = n;
-      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      t[n] = c;
+/** Distance to a circular arc stroke with round caps. */
+function arc(px, py, cx, cy, radius, startDeg, sweepDeg, width) {
+  const dx = px - cx;
+  const dy = py - cy;
+  const dist = Math.hypot(dx, dy);
+  let t = ((Math.atan2(dy, dx) * 180) / Math.PI - startDeg) % 360;
+  if (t < 0) t += 360;
+
+  if (t <= sweepDeg) return Math.abs(dist - radius) - width / 2;
+
+  const cap = (deg) => {
+    const a = (deg * Math.PI) / 180;
+    return Math.hypot(px - (cx + radius * Math.cos(a)), py - (cy + radius * Math.sin(a))) - width / 2;
+  };
+  return Math.min(cap(startDeg), cap(startDeg + sweepDeg));
+}
+
+function arcProgress(px, py, cx, cy, startDeg, sweepDeg) {
+  let t = ((Math.atan2(py - cy, px - cx) * 180) / Math.PI - startDeg) % 360;
+  if (t < 0) t += 360;
+  // Inside a round cap the angle runs past the arc's own range. Wrapping it
+  // would hand the start cap the far end of the gradient, so snap each cap to
+  // the end it belongs to instead.
+  if (t > sweepDeg) return t - sweepDeg < 360 - t ? 1 : 0;
+  return t / sweepDeg;
+}
+
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+/** Source-over of a straight colour onto the buffer. */
+function over(buf, i, colour, alpha) {
+  if (alpha <= 0) return;
+  const dstA = buf[i + 3] / 255;
+  const outA = alpha + dstA * (1 - alpha);
+  if (outA <= 0) return;
+  for (let c = 0; c < 3; c += 1) {
+    buf[i + c] = Math.round((colour[c] * alpha + buf[i + c] * dstA * (1 - alpha)) / outA);
+  }
+  buf[i + 3] = Math.round(outA * 255);
+}
+
+/**
+ * @param size   output pixels
+ * @param inset  0 for full-bleed, 0.2 for a maskable safe zone
+ */
+function render(size, inset = 0) {
+  const buf = new Uint8Array(size * size * 4);
+  const s = size / 64; // user units -> pixels
+
+  // The ring shrinks towards the centre for maskable icons; the plate never does.
+  const k = 1 - inset;
+  const cx = 32 * s;
+  const cy = 32 * s;
+  const radius = 18 * s * k;
+  const width = 7 * s * k;
+  const dotR = 5 * s * k;
+  const start = 135;
+  const trackSweep = 270;
+  const arcSweep = 200;
+
+  const endA = ((start + arcSweep) * Math.PI) / 180;
+  const dotX = cx + radius * Math.cos(endA);
+  const dotY = cy + radius * Math.sin(endA);
+
+  const PLATE = [14, 16, 22];
+  const GRAD_A = [99, 102, 241];
+  const GRAD_B = [165, 180, 252];
+  const WHITE = [255, 255, 255];
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const i = (y * size + x) * 4;
+      const px = x + 0.5;
+      const py = y + 0.5;
+
+      over(buf, i, PLATE, smooth(roundedRect(px, py, size, size, 13.5 * s)));
+      over(buf, i, WHITE, smooth(arc(px, py, cx, cy, radius, start, trackSweep, width)) * 0.16);
+
+      const dArc = arc(px, py, cx, cy, radius, start, arcSweep, width);
+      over(buf, i, mix(GRAD_A, GRAD_B, arcProgress(px, py, cx, cy, start, arcSweep)), smooth(dArc));
+      over(buf, i, WHITE, smooth(Math.hypot(px - dotX, py - dotY) - dotR));
     }
-    return t;
-  })());
-  let crc = -1;
-  for (let i = 0; i < buf.length; i += 1) crc = (crc >>> 8) ^ table[(crc ^ buf[i]) & 0xff];
-  return (crc ^ -1) >>> 0;
+  }
+  return buf;
+}
+
+/* ---------------- PNG container ---------------- */
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const typeBuf = Buffer.from(type, 'ascii');
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([len, typeBuf, data, crcBuf]);
+  const out = Buffer.alloc(8 + data.length + 4);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, 'ascii');
+  Buffer.from(data).copy(out, 8);
+  out.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'ascii'), Buffer.from(data)])), 8 + data.length);
+  return out;
 }
 
-function encodePNG(width, height, pixels) {
+function png(rgba, size) {
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y += 1) {
-    raw[y * (width * 4 + 1)] = 0; // no filter
-    pixels.copy(raw, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4);
+  ihdr[9] = 6; // truecolour with alpha
+  // 10-12: deflate, adaptive filtering, no interlace - all zero.
+
+  // One filter byte (none) in front of every scanline.
+  const raw = Buffer.alloc(size * (size * 4 + 1));
+  for (let y = 0; y < size; y += 1) {
+    raw[y * (size * 4 + 1)] = 0;
+    Buffer.from(rgba.buffer, y * size * 4, size * 4).copy(raw, y * (size * 4 + 1) + 1);
   }
+
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
@@ -64,60 +152,15 @@ function encodePNG(width, height, pixels) {
   ]);
 }
 
-/** Rounded-rect coverage test, used for anti-aliasing-free but tidy corners. */
-function insideRounded(px, py, x0, y0, x1, y1, r) {
-  if (px < x0 || px > x1 || py < y0 || py > y1) return false;
-  const cx = Math.min(Math.max(px, x0 + r), x1 - r);
-  const cy = Math.min(Math.max(py, y0 + r), y1 - r);
-  return (px - cx) ** 2 + (py - cy) ** 2 <= r * r;
-}
-
-function drawIcon(size, { maskable }) {
-  const px = Buffer.alloc(size * size * 4, 0);
-  const contentScale = maskable ? 0.68 : 1;
-  const offset = (size * (1 - contentScale)) / 2;
-  const bgRadius = maskable ? 0 : size * 0.22;
-
-  const set = (x, y, color) => {
-    const i = (y * size + x) * 4;
-    px[i] = color[0];
-    px[i + 1] = color[1];
-    px[i + 2] = color[2];
-    px[i + 3] = color[3];
-  };
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      if (maskable || insideRounded(x + 0.5, y + 0.5, 0, 0, size, size, bgRadius)) set(x, y, BG);
-    }
-  }
-
-  const baseline = offset + BASELINE * size * contentScale;
-  for (const bar of BARS) {
-    const bx0 = offset + bar.x * size * contentScale;
-    const bx1 = bx0 + bar.w * size * contentScale;
-    const by0 = baseline - bar.h * size * contentScale;
-    const radius = (bx1 - bx0) / 3;
-    for (let y = Math.floor(by0); y < Math.ceil(baseline); y += 1) {
-      for (let x = Math.floor(bx0); x < Math.ceil(bx1); x += 1) {
-        if (x < 0 || y < 0 || x >= size || y >= size) continue;
-        if (insideRounded(x + 0.5, y + 0.5, bx0, by0, bx1, baseline, radius)) set(x, y, bar.color);
-      }
-    }
-  }
-
-  return encodePNG(size, size, px);
-}
-
-mkdirSync(OUT_DIR, { recursive: true });
 const targets = [
-  ['icon-192.png', 192, { maskable: false }],
-  ['icon-512.png', 512, { maskable: false }],
-  ['icon-maskable-512.png', 512, { maskable: true }],
-  ['apple-touch-icon.png', 180, { maskable: true }],
+  ['public/icon-192.png', 192, 0],
+  ['public/icon-512.png', 512, 0],
+  ['public/icon-maskable-512.png', 512, 0.22],
+  ['public/apple-touch-icon.png', 180, 0],
 ];
 
-for (const [name, size, opts] of targets) {
-  writeFileSync(join(OUT_DIR, name), drawIcon(size, opts));
-  console.log(`wrote public/${name} (${size}x${size})`);
+for (const [path, size, inset] of targets) {
+  const bytes = png(render(size, inset), size);
+  writeFileSync(path, bytes);
+  console.log(path, size + 'px', bytes.length + ' bytes');
 }
