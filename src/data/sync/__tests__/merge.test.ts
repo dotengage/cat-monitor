@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../../defaultState';
 import type { AppState, Task } from '../../../domain/types';
+import { migrate } from '../../migrate';
 import { describeMerge, fingerprint, mergeStates } from '../merge';
 
 const T0 = '2026-09-01T10:00:00.000Z';
@@ -243,6 +244,38 @@ describe('a brand-new device', () => {
     const { state } = mergeStates(used, base());
     expect(state.tasks).toHaveLength(1);
     expect(state.topics).toHaveLength(used.topics.length);
+  });
+});
+
+describe('remote data written by an older build', () => {
+  /**
+   * The bug this guards against shipped once: a gist written before
+   * `settings.brand` existed was adopted whole, because merging takes the
+   * newer copy of a record, and the app then crashed to a white screen on the
+   * first render that read `brand.name`. Merging is not where normalisation
+   * belongs, so the fix is at the boundary - but the shape of the failure is
+   * worth pinning down.
+   */
+  function staleRemote(): AppState {
+    const remote = createInitialState();
+    delete (remote.settings as Partial<AppState['settings']>).brand;
+    remote.settings.updatedAt = '2099-01-01T00:00:00.000Z';
+    return remote;
+  }
+
+  it('merging alone keeps whatever the newer side had, gaps included', () => {
+    const { state } = mergeStates(createInitialState(), staleRemote());
+    expect(state.settings.brand).toBeUndefined();
+  });
+
+  it('migrating the merged state fills the gap the remote left', () => {
+    const { state } = mergeStates(createInitialState(), staleRemote());
+    const safe = migrate(state);
+
+    expect(safe.settings.brand.name).toBe('CAT Monitor');
+    expect(safe.settings.brand.glyph).toBe('C');
+    // Everything else the newer remote decided is still honoured.
+    expect(safe.settings.updatedAt).toBe('2099-01-01T00:00:00.000Z');
   });
 });
 

@@ -7,6 +7,7 @@
  * the device, never inside the synced payload.
  */
 import type { AppState } from '../../domain/types';
+import { migrate } from '../migrate';
 
 const API = 'https://api.github.com';
 const DATA_FILENAME = 'cat-monitor-data.json';
@@ -187,7 +188,17 @@ export async function readDataGist(token: string, gistId: string): Promise<SyncE
     if (parsed?.app !== 'cat-monitor' || !parsed.state) {
       throw new GistError('The sync file does not look like CAT Monitor data.');
     }
-    return parsed;
+    /*
+     * Normalise before anything downstream touches it.
+     *
+     * The gist may have been written by an older build, or by a device that
+     * has not updated yet, so it can be missing fields this version depends
+     * on. Merging adopts whole records wherever the remote copy is newer, so
+     * an un-normalised payload puts a half-shaped record straight into live
+     * state. Loading and importing already migrate at their boundary; this is
+     * the third way data enters the app and it needs the same treatment.
+     */
+    return { ...parsed, state: migrate(parsed.state) };
   } catch (err) {
     if (err instanceof GistError) throw err;
     throw new GistError('The sync file is corrupted and could not be read.');

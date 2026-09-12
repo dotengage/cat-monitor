@@ -418,6 +418,31 @@ a:hover { text-decoration: underline; }
   display: block;
 }
 
+/* ---------------- Crash screen ---------------- */
+
+.crash {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+.crash .card { max-width: 540px; }
+.crash h1 { font-size: 1.2rem; margin-bottom: 10px; }
+.crash .btn-group { margin-top: 16px; }
+
+.crash-detail {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---------------- Appearance controls ---------------- */
 
 .theme-groups { display: grid; gap: 14px; }

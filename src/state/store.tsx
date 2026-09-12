@@ -37,6 +37,7 @@ import type {
 import { repository } from '../data/repository';
 import { requestPersistentStorage } from '../data/db';
 import { createInitialState } from '../data/defaultState';
+import { migrate } from '../data/migrate';
 import { applyMissedDecision } from '../engine/missedTask';
 import { generateWeek } from '../engine/generateWeek';
 import { rebalanceWeek, type DecisionDraft } from '../engine/rebalance';
@@ -718,9 +719,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Sync adopts a merged state exactly like a load would.
+  // Sync adopts a merged state exactly like a load would - migration included,
+  // since half of that state came from another device's build.
   const adopt = useCallback((next: AppState) => {
-    dispatch({ type: 'replace', state: next });
+    dispatch({ type: 'replace', state: migrate(next) });
   }, []);
   const syncApi = useSync(state, loading, adopt);
 
