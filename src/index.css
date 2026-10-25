@@ -418,6 +418,55 @@ a:hover { text-decoration: underline; }
   display: block;
 }
 
+/* ---------------- Screenshot import ---------------- */
+
+.shot-drop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+
+.shot-drop.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.shot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.shot-body .btn-group { margin-top: 6px; }
+
+.shot-thumb {
+  width: 76px;
+  height: 56px;
+  flex: none;
+  object-fit: cover;
+  object-position: top left;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+}
+
 /* ---------------- Crash screen ---------------- */
 
 .crash {

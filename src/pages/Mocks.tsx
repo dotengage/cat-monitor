@@ -5,7 +5,9 @@ import type { Mock, SectionKey, SectionScore } from '../domain/types';
 import { sortedMocks } from '../engine/derive';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
+import type { ScoreTable } from '../import/scoreTable';
 import { Callout, Card, Empty, Field, Modal, Stat, StatGrid, Tag } from '../ui/components';
+import { ScreenshotImport } from '../ui/components/ScreenshotImport';
 import { buildMockReport, reportFilename } from '../export/reports';
 
 const emptyScore: SectionScore = { score: 0, percentile: 0, attempts: 0, correct: 0, incorrect: 0 };
@@ -229,6 +231,49 @@ function MockModal({
 
   const relevantSections = kind === 'full' ? SECTIONS : [section];
 
+  /**
+   * Applies a table read from a screenshot, and reports how many fields it
+   * actually filled.
+   *
+   * Only fields the table has a number for are touched. A column the portal
+   * did not show, or a cell the recogniser could not read, leaves whatever was
+   * already there rather than zeroing it - a blank field you still have to
+   * type is a smaller problem than a confident wrong number you do not notice.
+   */
+  const applyScreenshot = (table: ScoreTable): number => {
+    let filled = 0;
+
+    setSections((current) => {
+      const next = { ...current };
+      for (const key of relevantSections) {
+        const reading = table.sections[key];
+        if (!reading) continue;
+        const merged = { ...next[key] };
+        (['score', 'percentile', 'attempts', 'correct', 'incorrect'] as (keyof SectionScore)[]).forEach((field) => {
+          const value = reading[field];
+          if (typeof value === 'number') {
+            merged[field] = value;
+            filled += 1;
+          }
+        });
+        next[key] = merged;
+      }
+      return next;
+    });
+
+    if (kind === 'full') {
+      if (typeof table.overall.score === 'number') {
+        setOverallScore(String(table.overall.score));
+        filled += 1;
+      }
+      if (typeof table.overall.percentile === 'number') {
+        setOverallPercentile(String(table.overall.percentile));
+        filled += 1;
+      }
+    }
+    return filled;
+  };
+
   const save = () => {
     const scores = {
       date,
@@ -302,6 +347,8 @@ function MockModal({
           </Field>
         </div>
       )}
+
+      <ScreenshotImport onRead={applyScreenshot} />
 
       {relevantSections.map((s) => (
         <fieldset key={s} className="field">

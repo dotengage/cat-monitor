@@ -23,6 +23,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
 - [Installing as a PWA](#installing-as-a-pwa)
+- [Filling in a mock from a screenshot](#filling-in-a-mock-from-a-screenshot)
 - [Themes, name and icon](#themes-name-and-icon)
 - [PDF reports](#pdf-reports)
 - [Syncing between devices](#syncing-between-devices)
@@ -315,6 +316,30 @@ Once installed it launches standalone, works offline after the first visit, and 
 Service workers require HTTPS (or `localhost`). On GitHub Pages that is automatic. When running `npm run dev` the service worker is deliberately not registered, so you never debug against a stale cache.
 
 ---
+
+## Filling in a mock from a screenshot
+
+In **Mocks → Record a full mock**, paste a screenshot of your result table with <kbd>Ctrl</kbd>+<kbd>V</kbd> — or drop one, or choose a file — and the section numbers fill themselves in. Everything stays editable; the screenshot is a first draft, not a commitment.
+
+Nothing is uploaded. The recognition runs in the tab, on pixels that never leave the device, and it works offline.
+
+### How it reads the table
+
+A results table is the easy end of OCR: screen-rendered sans-serif glyphs, high contrast, in a grid. That is tractable without the usual options — a cloud OCR service, which would break the promise that your data stays yours, or a multi-megabyte WASM engine, which is a long download before you can type five numbers and useless offline.
+
+So the recogniser is local and purpose-built (`src/import/`):
+
+1. **Binarise.** Otsu's method picks the threshold, rather than a fixed cutoff, because these numbers are often a mid-tone accent colour. Whichever side holds most of the image is the paper, so a dark-mode screenshot reads correctly too.
+2. **Find glyphs.** Eight-connected components, with rules, borders and specks discarded by size and aspect. Disconnected parts — the dot of an `i` — are reattached.
+3. **Group.** Into lines by vertical overlap, then into cells by gap size, measured against the line's own glyph height so the same thresholds hold at any resolution.
+4. **Match.** Each glyph is reduced to ink coverage on a 16×16 grid and compared against the same measurement taken from characters drawn into a canvas in sixteen faces and weights. Scale-free, and no font files to ship.
+5. **Assemble.** Headings and row labels are matched against a short vocabulary by edit distance, so a misread "Attemptod" still lands on *attempted*. Numeric cells are read again by a digits-only pass that cannot produce a letter at all.
+
+**It is allowed to misread, and the table still comes out right.** Two things make that true. Fuzzy vocabulary matching absorbs wrong characters in headings. And the total row is found by arithmetic rather than by its label — its numbers are the column sums of the sections above, which is independent of font, language and provider. The label "Overall" really does come back as `-eraIl` from a bold screenshot, and no threshold loose enough to accept that would be safe.
+
+That same arithmetic is the check on the result: if a total does not match the sections, you are told which column and by how much, rather than being handed a plausible wrong number. A cell that cannot be read cleanly is left empty — a field you still have to type is a smaller problem than a confident wrong number you do not notice.
+
+On the sample table the whole thing takes about 190 ms, template sheet included.
 
 ## Themes, name and icon
 
