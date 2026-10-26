@@ -71,7 +71,7 @@ describe('calculateFeasibility', () => {
   it('stays UNCONFIRMED until a baseline exists', () => {
     const feasibility = calculateFeasibility(makeState(), TODAY);
     expect(feasibility.status).toBe('UNCONFIRMED');
-    expect(feasibility.headline).toBe('Target feasibility: UNCONFIRMED');
+    expect(feasibility.headline).toMatch(/Take a full mock/);
   });
 
   it('downgrades an on-track trajectory when the workload cannot fit', () => {
@@ -88,7 +88,7 @@ describe('calculateFeasibility', () => {
 
     const feasibility = calculateFeasibility(state, TODAY);
     expect(feasibility.status).not.toBe('ON_TRACK');
-    expect(feasibility.reason).toMatch(/does not fit the remaining capacity|exceeds realistic capacity/);
+    expect(feasibility.reason).toMatch(/more work than your available hours/);
   });
 
   it('lists the evidence it used, and keeps any chance out of the headline', () => {
@@ -97,8 +97,8 @@ describe('calculateFeasibility', () => {
 
     expect(labels).toContain('Days remaining');
     expect(labels).toContain('Full mocks with marks');
-    expect(labels).toContain('Binding constraint');
-    expect(labels).toContain('Workload health');
+    expect(labels).toContain('Focus area');
+    expect(labels).not.toContain('Open errors');
     // A chance belongs next to the band it came from, never in a one-line verdict.
     expect(feasibility.headline).not.toMatch(/%/);
   });

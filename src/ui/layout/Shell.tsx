@@ -10,7 +10,6 @@ export const ROUTES = [
   { key: 'flashcards', label: 'Flashcards', short: 'Cards', icon: 'cards', primary: true, group: 'Plan' },
   { key: 'cat', label: 'CAT readiness', icon: 'cat', primary: false, group: 'Performance' },
   { key: 'mocks', label: 'Mocks', icon: 'mocks', primary: false, group: 'Performance' },
-  { key: 'errors', label: 'Errors', icon: 'errors', primary: false, group: 'Performance' },
   { key: 'analytics', label: 'Analytics', icon: 'analytics', primary: false, group: 'Performance' },
   { key: 'goals', label: 'Goals', icon: 'goals', primary: false, group: 'System' },
   { key: 'review', label: 'Weekly review', icon: 'review', primary: false, group: 'System' },

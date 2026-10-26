@@ -109,16 +109,6 @@ export function createGoals(examDate: string, target: number): Goal[] {
       currentValue: 0,
       deadline: examDate,
     },
-    {
-      ...base,
-      id: uid('goal'),
-      title: 'Error recurrence reduction',
-      priority: 'P1',
-      isPrimary: false,
-      description: 'Every logged error is revisited and either resolved or re-planned.',
-      metric: 'errors resolved',
-      deadline: examDate,
-    },
   ];
 }
 

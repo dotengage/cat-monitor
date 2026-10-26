@@ -273,9 +273,9 @@ function buildSingleFocus(
     return 'Cut scope. The remaining workload does not fit the remaining capacity, and no amount of scheduling fixes that.';
   }
   if (feasibility.status === 'OFF_TRACK' && feasibility.workload.remainingMin > 0) {
-    const constraint = feasibility.inputs.find((i) => i.label === 'Binding constraint')?.value;
-    return constraint && constraint !== 'not established'
-      ? `Concentrate on ${constraint}. Breadth is no longer affordable.`
+    const constraint = feasibility.inputs.find((i) => i.label === 'Focus area')?.value;
+    return constraint && constraint !== 'not yet clear'
+      ? `Put your best hours into ${constraint}: that is where the next marks are.`
       : feasibility.nextAction;
   }
   return feasibility.nextAction;

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays } from '../../../domain/date';
 import type { Mock } from '../../../domain/types';
 import { makeMock, makeState, TODAY } from '../../__tests__/fixtures';
+import { blendCurves, fitCurve, referenceCurve } from '../curve';
 import { analyseTrend, calculateForecast, cleanMock, statusFromGap } from '../index';
 import { findContradictions, minePatterns, tagText } from '../patterns';
 
@@ -148,7 +149,7 @@ describe('step 4: the "flat" bug', () => {
     expect(t.blocksRising).toBe(true);
     if (t.label === 'FLAT' || t.label === 'VOLATILE') {
       expect(t.leadWithBlocks).toBe(true);
-      expect(t.summary.startsWith('Block averages')).toBe(true);
+      expect(t.summary.startsWith('Improving')).toBe(true);
     }
   });
 
@@ -201,7 +202,7 @@ describe('step 5: the "blame QA" bug', () => {
     const f = forecastOf(series(swings));
     expect(f.trend.label).not.toBe('RISING');
     expect(f.cleanPaper?.consistencyHeadline).toBe(true);
-    expect(f.recommendedAction).toMatch(/consistency/);
+    expect(f.recommendedAction).toMatch(/same paper/);
   });
 
   it('reports the clean-paper rate and combined bests', () => {
@@ -289,8 +290,9 @@ describe('step 7: rule-based status', () => {
     expect(statusFromGap(96, 90, 10.5).highVariance).toBe(true);
   });
 
-  it('prints the rule that produced the label', () => {
-    expect(statusFromGap(96, 90, 12).rule).toMatch(/Gap = 96 - 90 = 6 points/);
+  it('says how far there is to go, in plain words', () => {
+    expect(statusFromGap(96, 90, 12).rule).toBe('About 6 points to go to 96.');
+    expect(statusFromGap(96, 97, 12).rule).toMatch(/At or above 96/);
   });
 
   it('stays unconfirmed, and says what to log, when marks cannot be converted', () => {
@@ -414,5 +416,75 @@ describe('hard rules on the output', () => {
     expect(empty.status).toBe('UNCONFIRMED');
     expect(empty.recommendedAction).toMatch(/full-length mock/);
     expect(empty.dataQuality.length).toBeGreaterThan(0);
+  });
+});
+
+describe('exam day on the real CAT scale', () => {
+  /** A steady climb from 38 to 66 marks, read harshly by the mock provider (66 marks = 92nd). */
+  const climber = () => {
+    const pct = (m: number) => Math.round((100 / (1 + Math.exp(-(-0.5 + 0.045 * m)))) * 10) / 10;
+    const marks = [38, 45, 40, 48, 52, 47, 55, 58, 53, 62, 66];
+    const mocks = marks.map((m, i) =>
+      makeMock({
+        id: `c${i}`,
+        name: `Mock ${i + 1}`,
+        date: addDays(TODAY, -4 * (marks.length - 1 - i)),
+        overallScore: m,
+        overallPercentile: pct(m),
+        sections: {
+          VARC: { score: Math.round(m * 0.35), percentile: 0, attempts: 18, correct: 12, incorrect: 6 },
+          DILR: { score: Math.round(m * 0.3), percentile: 0, attempts: 12, correct: 6, incorrect: 6 },
+          QA: { score: m - Math.round(m * 0.35) - Math.round(m * 0.3), percentile: 0, attempts: 20, correct: 12, incorrect: 8 },
+        },
+      }),
+    );
+    const base = makeState({ mocks });
+    return calculateForecast({ ...base, profile: { ...base.profile, targetPercentile: 97, examDate: addDays(TODAY, 34) } }, TODAY);
+  };
+
+  it('gives a real chance to someone a few points from the target and climbing', () => {
+    const f = climber();
+    expect(f.forecast!.probability!).toBeGreaterThan(0.08);
+    expect(f.forecast!.probability!).toBeLessThan(0.25);
+  });
+
+  it('reads 97 at roughly the marks the real exam asks for, not the mock provider', () => {
+    expect(climber().curve!.targetMarks!).toBeGreaterThan(70);
+    expect(climber().curve!.targetMarks!).toBeLessThan(82);
+  });
+
+  it('never puts a bad day more than six points below the likely one', () => {
+    const swings = [row(112, 45, 30, 37), row(60, 20, 15, 25), row(110, 44, 31, 35), row(58, 22, 12, 24), row(111, 43, 29, 37), row(61, 21, 14, 26)];
+    for (const f of [climber(), forecastOf(series(swings))]) {
+      const p = f.forecast!.percentile!;
+      expect(p.p50 - p.p10).toBeLessThanOrEqual(6 + 1e-9);
+      const bad = f.scenarios.find((s) => s.key === 'BAD')!;
+      expect(f.scenarios.find((s) => s.key === 'LIKELY')!.percentile! - bad.percentile!).toBeLessThanOrEqual(6 + 1e-9);
+    }
+  });
+});
+
+describe('the real-exam curve', () => {
+  it('matches the anchors it was built from', () => {
+    expect(referenceCurve.toPercentile(55)).toBeCloseTo(90, 0);
+    expect(referenceCurve.toPercentile(65)).toBeGreaterThanOrEqual(93);
+    expect(referenceCurve.toPercentile(65)).toBeLessThanOrEqual(95);
+    expect(referenceCurve.toPercentile(88)).toBeCloseTo(99, 0);
+  });
+
+  it('blends into a curve that never runs backwards, even when the weight jumps', () => {
+    const harsh = fitCurve([
+      { marks: 30, percentile: 60 },
+      { marks: 50, percentile: 80 },
+      { marks: 70, percentile: 93 },
+    ])!;
+    const blend = blendCurves(harsh, referenceCurve, (m) => (m < 60 ? 0 : 1));
+    let last = -Infinity;
+    for (let m = 0; m <= 150; m += 0.25) {
+      const p = blend.toPercentile(m);
+      expect(p).toBeGreaterThanOrEqual(last);
+      last = p;
+    }
+    expect(blend.toPercentile(blend.toMarks(95))).toBeCloseTo(95, 1);
   });
 });

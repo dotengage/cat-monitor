@@ -195,26 +195,31 @@ describe('mock centre', () => {
   });
 });
 
-describe('error log', () => {
-  it('tracks resolution against the error-reduction goal', () => {
-    let state = onboarded();
-    state = run(state, {
-      type: 'error/add',
-      entry: {
-        date: TODAY,
-        section: 'QA',
-        question: 'Ratio Q12',
-        errorType: 'calculation',
-        explanation: 'Dropped a factor of 2',
-        correctedApproach: 'Write the ratio before substituting',
-        resolved: false,
-      },
-    });
-    const id = state.errors[0].id;
-    state = run(state, { type: 'error/update', id, patch: { resolved: true } });
+describe('retiring the error log', () => {
+  it('drops the old error goal with a tombstone, so a synced copy cannot bring it back', () => {
+    const goal = { ...onboarded().goals[0], id: 'goal-errors', title: 'Error recurrence reduction', metric: 'errors resolved' };
+    const state = migrate({ ...onboarded(), goals: [...onboarded().goals, goal] });
+    expect(state.goals.some((g) => g.metric === 'errors resolved')).toBe(false);
+    expect(state.deletedIds['goal-errors']).toBeDefined();
+  });
 
-    expect(state.errors[0].resolved).toBe(true);
-    expect(state.goals.find((g) => g.metric === 'errors resolved')?.currentValue).toBe(1);
+  it('clears planned error-review work and its outcomes, but keeps work already done', () => {
+    const base = onboarded();
+    const task = base.tasks[0];
+    const tasks = [
+      { ...task, id: 'planned-review', type: 'error-review' as const, origin: 'auto' as const, status: 'planned' as const },
+      { ...task, id: 'done-review', type: 'error-review' as const, origin: 'auto' as const, status: 'done' as const },
+    ];
+    const week = { ...base.weeks[0], outcomes: [...base.weeks[0].outcomes, { id: 'o-err', title: 'Establish error tracking', metric: '', achieved: false }] };
+    const state = migrate({ ...base, tasks, weeks: [week] });
+    expect(state.tasks.map((t) => t.id)).toEqual(['done-review']);
+    expect(state.deletedIds['planned-review']).toBeDefined();
+    expect(state.weeks[0].outcomes.some((o) => o.title === 'Establish error tracking')).toBe(false);
+  });
+
+  it('keeps logged errors in the data, untouched', () => {
+    const errors = [{ id: 'e1', createdAt: '', updatedAt: '', date: TODAY, section: 'QA' as const, question: 'Q', errorType: 'calculation' as const, explanation: '', correctedApproach: '', resolved: false }];
+    expect(migrate({ ...onboarded(), errors }).errors).toEqual(errors);
   });
 });
 

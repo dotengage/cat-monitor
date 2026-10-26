@@ -9,7 +9,7 @@ import { SECTION_LABELS } from '../config/catConfig';
 import { addDays, daysBetween, formatHours, fromISODate, monthKey, monthName, toISODate } from '../domain/date';
 import type { AppState, ISODate, MonthlyStrategy } from '../domain/types';
 import { sustainableWeeklyMin } from './capacity';
-import { coverageBySection, daysToExam, fullMocks, openErrors, unanalysedMocks, weaknessScores } from './derive';
+import { coverageBySection, daysToExam, fullMocks, unanalysedMocks, weaknessScores } from './derive';
 import { preparationPhase, recommendedMockCadence } from './readiness';
 import { projectRemainingWorkload } from './workload';
 
@@ -91,22 +91,19 @@ export function buildMonthlyStrategy(state: AppState, today: ISODate): MonthlySt
     keyOutcomes.push('Baseline mock completed, recorded and analysed');
     keyOutcomes.push('Section-level weaknesses identified for VARC, DILR and QA');
     keyOutcomes.push('Realistic weekly capacity established from 7+ days of logged data');
-    keyOutcomes.push('Error log active with every mistake classified');
     completionRequirements.push('A baseline mock must exist before the next month is planned - without it every projection is guesswork.');
   } else {
     keyOutcomes.push(`${targetMocks} full mock(s) attempted and fully analysed`);
     keyOutcomes.push(`${targetSectionals} sectional(s) completed, weighted towards ${SECTION_LABELS[weakest]}`);
     if (checkpoint !== null) keyOutcomes.push(`Overall mock percentile at or above ${checkpoint} by ${monthEnd}`);
     keyOutcomes.push(`${affordableTopics} topic(s) moved to practised or better`);
-    keyOutcomes.push('Repeated error types reduced - every logged error revisited at least once');
     completionRequirements.push('Every mock recorded this month must be analysed before the next month is planned.');
   }
 
-  projects.push(`Close ${SECTION_LABELS[weakest]} weakness (currently the binding constraint)`);
+  projects.push(`Lift ${SECTION_LABELS[weakest]}, where your next marks are`);
   if (unanalysedMocks(state).length > 0) projects.push(`Clear the analysis backlog (${unanalysedMocks(state).length} mock(s))`);
   if (coverage.QA < 0.6) projects.push('Complete high-weight QA coverage (Arithmetic and Algebra first)');
   if (phase !== 'FOUNDATION') projects.push('Write and test a one-page exam-day strategy');
-  if (openErrors(state).length > 10) projects.push(`Resolve the ${openErrors(state).length} open error-log entries`);
 
   completionRequirements.push(
     `Weekly reviews completed for every week in the month - the next month's plan is generated from them.`,

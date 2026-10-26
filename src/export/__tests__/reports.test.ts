@@ -137,7 +137,7 @@ describe('buildAnalyticsReport', () => {
     expect(pdf).toContain('Analytics report');
     expect(pdf).toContain('Remaining workload');
     expect(pdf).toContain('Consistency');
-    expect(pdf).toContain('Error categories');
+    expect(pdf).not.toContain('Error categories');
   });
 
   it('survives a completely empty state', async () => {

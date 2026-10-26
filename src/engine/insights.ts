@@ -78,11 +78,10 @@ export function generateInsights(state: AppState, today: ISODate, weekStart: ISO
       source: 'Forecast',
     });
   } else if (forecast.trend.label === 'RISING' && forecast.status !== 'ON_TRACK') {
-    const lead = forecast.constraint.top[0];
     out.push({
       id: 'forecast:rising',
-      text: `Marks are rising with a 90% interval that excludes zero${lead ? `, and ${SECTION_LABELS[lead.section]} is the binding constraint` : ''}.`,
-      tone: 'neutral',
+      text: 'Your marks are genuinely rising. Keep the climb going.',
+      tone: 'positive',
       source: 'Forecast',
     });
   } else if (forecast.status === 'ON_TRACK') {
@@ -118,13 +117,15 @@ export function generateInsights(state: AppState, today: ISODate, weekStart: ISO
     });
   }
 
-  /* Binding constraint - only once it can be named from enough mocks */
+  /* Focus area - only once it can be named from enough mocks */
   const lead = forecast.constraint.top[0];
   if (forecast.constraint.established && lead) {
     out.push({
       id: `constraint:${lead.section}`,
-      text: `${SECTION_LABELS[lead.section]} is the binding constraint: ${lead.why}`,
-      tone: 'warning',
+      text: `${SECTION_LABELS[lead.section]} is where your next marks are: ${
+        lead.kind === 'CONSISTENCY' ? 'steadier papers there lift the whole score' : 'raising its ceiling lifts the whole score'
+      }.`,
+      tone: 'neutral',
       source: 'Forecast',
     });
   }

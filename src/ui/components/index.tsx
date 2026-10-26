@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { TrackStatus, WorkloadHealth } from '../../domain/types';
+import { STATUS_WORDS } from '../../engine/forecast';
 
 /* ------------------------------------------------------------------ */
 /* Card                                                                */
@@ -79,13 +80,17 @@ export function Card({
 /* Status                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Every status reads as progress, never as alarm: no red, no warning
+ * triangle. The distance still to go is in the words beside the pill.
+ */
 const STATUS_META: Record<TrackStatus, { label: string; cls: string; shape: string }> = {
-  ON_TRACK: { label: 'On track', cls: 'status-ok', shape: '' },
-  STRETCH: { label: 'Stretch', cls: 'status-accent', shape: 'square' },
-  AT_RISK: { label: 'At risk', cls: 'status-warn', shape: 'square' },
-  OFF_TRACK: { label: 'Off track', cls: 'status-risk', shape: 'triangle' },
-  BEHIND: { label: 'Behind', cls: 'status-risk', shape: 'triangle' },
-  UNCONFIRMED: { label: 'Insufficient data', cls: 'status-neutral', shape: 'square' },
+  ON_TRACK: { label: STATUS_WORDS.ON_TRACK, cls: 'status-ok', shape: '' },
+  STRETCH: { label: STATUS_WORDS.STRETCH, cls: 'status-ok', shape: 'square' },
+  AT_RISK: { label: STATUS_WORDS.AT_RISK, cls: 'status-accent', shape: 'square' },
+  OFF_TRACK: { label: STATUS_WORDS.OFF_TRACK, cls: 'status-accent', shape: 'square' },
+  BEHIND: { label: STATUS_WORDS.BEHIND, cls: 'status-accent', shape: 'square' },
+  UNCONFIRMED: { label: STATUS_WORDS.UNCONFIRMED, cls: 'status-neutral', shape: 'square' },
 };
 
 /** Colour is never the only signal: every pill carries a text label and shape. */
@@ -102,8 +107,8 @@ export function StatusPill({ status, label }: { status: TrackStatus; label?: str
 const HEALTH_META: Record<WorkloadHealth, { label: string; cls: string; shape: string }> = {
   COMFORTABLE: { label: 'Comfortable', cls: 'status-ok', shape: '' },
   TIGHT: { label: 'Tight', cls: 'status-warn', shape: 'square' },
-  AT_RISK: { label: 'At risk', cls: 'status-warn', shape: 'square' },
-  UNSUSTAINABLE: { label: 'Unsustainable', cls: 'status-risk', shape: 'triangle' },
+  AT_RISK: { label: 'Stretched', cls: 'status-warn', shape: 'square' },
+  UNSUSTAINABLE: { label: 'Over capacity', cls: 'status-warn', shape: 'triangle' },
 };
 
 export function HealthPill({ health }: { health: WorkloadHealth }) {
@@ -347,21 +352,52 @@ export function ActionMenu({
   items: { label: string; onClick: () => void; danger?: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // The menu is portalled to <body> and placed against the trigger, so a
+  // scrolling table or a card with overflow cannot clip it. It opens upward
+  // when there is not room below.
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) {
+      const right = Math.max(8, window.innerWidth - r.right);
+      const room = window.innerHeight - r.bottom;
+      const needed = items.length * 40 + 20;
+      setPlace(room < needed && r.top > room ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+    }
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
+    // A fixed menu would drift away from its trigger on scroll.
+    const close = (e: Event) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
     };
   }, [open]);
 
@@ -373,28 +409,30 @@ export function ActionMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
       >
         <span aria-hidden="true">···</span>
       </button>
-      {open && (
-        <div className="menu" role="menu">
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              role="menuitem"
-              className={item.danger ? 'danger' : undefined}
-              onClick={() => {
-                setOpen(false);
-                item.onClick();
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div className="menu" role="menu" ref={menuRef} style={place ?? undefined}>
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                className={item.danger ? 'danger' : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

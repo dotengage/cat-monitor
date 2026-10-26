@@ -14,8 +14,8 @@ import type {
   WorkloadHealth,
 } from '../domain/types';
 import { capacityBetween, sustainableWeeklyMin } from './capacity';
-import { backlogTasks, clamp, isOpen, mean, openErrors, unanalysedMocks } from './derive';
-import { calculateForecast } from './forecast';
+import { backlogTasks, clamp, isOpen, mean, unanalysedMocks } from './derive';
+import { calculateForecast, encouragement, TREND_WORDS } from './forecast';
 import { recommendedMockCadence } from './readiness';
 
 const STATUS_COVERAGE_WEIGHT: Record<string, number> = {
@@ -61,7 +61,6 @@ export function projectRemainingWorkload(state: AppState, today: ISODate): Remai
 
   /* --- 4. Debt already accrued ------------------------------------- */
   const analysisBacklogMin = unanalysedMocks(state).length * params.mockAnalysisMin;
-  const errorMin = openErrors(state).length * params.errorReviewMin;
 
   /* --- 5. Revision of what is already covered ---------------------- */
   const coveredTopics = state.topics.filter((t) => t.status === 'practised' || t.status === 'strong').length;
@@ -74,7 +73,6 @@ export function projectRemainingWorkload(state: AppState, today: ISODate): Remai
     { label: 'Mocks + analysis', min: Math.round(mockMin) },
     { label: 'Sectionals + analysis', min: Math.round(sectionalMin) },
     { label: 'Mock analysis backlog', min: Math.round(analysisBacklogMin) },
-    { label: 'Error review', min: Math.round(errorMin) },
     { label: 'Revision', min: Math.round(revisionMin) },
   ].filter((b) => b.min > 0);
 
@@ -160,7 +158,7 @@ export function criticalSafetyCheck(state: AppState, today: ISODate): SafetyChec
     severity: workload.health === 'UNSUSTAINABLE' ? 'critical' : 'warn',
     message:
       `Your current plan requires approximately ${requiredHours} focused hours before CAT. At your current sustainable capacity of ${weeklyHours} hours per week, only about ${availableHours} hours are realistically available. ` +
-      (deficit > 0 ? `That is a shortfall of roughly ${deficit} hours. Something must change.` : 'The margin is thin enough that any disruption breaks the plan.'),
+      (deficit > 0 ? `That is roughly ${deficit} hours more than fits, so the plan needs trimming to match.` : 'The margin is thin, so keep the buffer free for the unexpected.'),
     suggestions: [
       'Drop the lowest-weight topics entirely rather than half-covering them.',
       'Reduce or pause P2/P3 goals until the gap closes.',
@@ -206,12 +204,12 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
   const target = state.profile.targetPercentile;
 
   let status = forecast.status;
-  const reasons: string[] = [forecast.statusRule];
+  const reasons: string[] = [];
   if (forecast.forecast?.percentile && forecast.forecast.probability !== undefined) {
     const p = forecast.forecast.percentile;
-    reasons.unshift(
-      `Likely exam-day percentile ${round(p.p50)}, range ${round(p.p10)} to ${round(p.p90)}; chance of ${target} ${chance(forecast.forecast.probability)}.`,
-    );
+    reasons.push(`Likely exam-day percentile ${round(p.p50)}; chance of ${target}: ${chance(forecast.forecast.probability)}.`);
+  } else {
+    reasons.push(forecast.statusRule);
   }
 
   // Capacity can only make the picture worse, never better.
@@ -220,25 +218,14 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
       const before = status;
       status = worsen(status);
       if (status !== before) {
-        reasons.push(
-          'The remaining workload does not fit the remaining capacity, so the status is moved down one step: the plan itself is a risk, not just the scores.',
-        );
+        reasons.push('The plan holds more work than your available hours, so trimming it is the quickest win.');
       }
     } else if (workload.health === 'AT_RISK' && status === 'ON_TRACK') {
-      reasons.push('Capacity is tight, so protect the buffer rather than adding volume.');
+      reasons.push('Your hours are fully used: protect the buffer rather than adding more.');
     }
   }
 
-  const headline =
-    status === 'UNCONFIRMED'
-      ? 'Target feasibility: UNCONFIRMED'
-      : status === 'ON_TRACK'
-        ? `${target} percentile is within reach on current evidence`
-        : status === 'STRETCH'
-          ? `${target} percentile is a stretch: within 4 points of the likely outcome`
-          : status === 'AT_RISK'
-            ? `${target} percentile is at risk: 4 to 8 points short of the likely outcome`
-            : `${target} percentile is off track: more than 8 points short of the likely outcome`;
+  const headline = encouragement(status, target, forecast.forecast?.percentile?.p50);
 
   const level = forecast.level;
   const lead = forecast.constraint.top[0];
@@ -254,14 +241,12 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
           ? `${round(level.marks)} marks (about ${round(level.percentile)} percentile)`
           : `${round(level.marks)} marks`,
     },
-    { label: 'Trend', value: forecast.trend.label === 'INSUFFICIENT' ? 'not established' : forecast.trend.label.toLowerCase() },
-    { label: 'Binding constraint', value: lead ? `${lead.section} (${lead.kind.toLowerCase()} gap)` : 'not established' },
+    { label: 'Trend', value: TREND_WORDS[forecast.trend.label].toLowerCase() },
+    { label: 'Focus area', value: lead ? lead.section : 'not yet clear' },
     { label: 'Remaining workload', value: formatHours(workload.remainingMin, 0) },
     { label: 'Required per week', value: formatHours(workload.requiredPerWeekMin, 1) },
     { label: 'Realistic per week', value: formatHours(workload.realisticPerWeekMin, 1) },
     { label: 'Actual per week (recent)', value: workload.actualPerWeekMin ? formatHours(workload.actualPerWeekMin, 1) : 'not recorded' },
-    { label: 'Workload health', value: workload.health.replace('_', ' ').toLowerCase() },
-    { label: 'Open errors', value: String(openErrors(state).length) },
     { label: 'Backlog items', value: String(backlogTasks(state).length) },
   ];
 

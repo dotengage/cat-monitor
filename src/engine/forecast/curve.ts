@@ -192,3 +192,82 @@ export function fitCurve(raw: Pair[]): Curve | null {
   if (pairs.length >= 2) return interpolated(pairs);
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* The real exam                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Marks to percentile on the actual CAT, from typical recent years: about 55
+ * marks for the 90th percentile, 65 for 93 to 95, and the high 80s for 99.
+ *
+ * Mock providers set harder papers to stronger fields than the real exam
+ * draws, so a mock's own percentile understates where the same marks land
+ * on exam day. The exam-day forecast therefore reads marks through a blend of
+ * this curve and the one fitted to your mocks.
+ */
+export const CAT_REFERENCE: Pair[] = [
+  { marks: 20, percentile: 55 },
+  { marks: 30, percentile: 70 },
+  { marks: 40, percentile: 80 },
+  { marks: 55, percentile: 90 },
+  { marks: 65, percentile: 94 },
+  { marks: 75, percentile: 97 },
+  { marks: 88, percentile: 99 },
+  { marks: 100, percentile: 99.6 },
+  { marks: 120, percentile: 99.9 },
+];
+
+export const referenceCurve: Curve = interpolated(CAT_REFERENCE)!;
+
+/**
+ * Mixes two curves in logit space, `weightAt(marks)` of the way towards `b`.
+ *
+ * The weight may vary with marks, so the mix is tabulated on a grid and held
+ * non-decreasing: however the two inputs cross, more marks never reads as a
+ * lower percentile.
+ */
+export function blendCurves(a: Curve, b: Curve, weightAt: (marks: number) => number): Curve {
+  const LOW = -60;
+  const STEP = 0.5;
+  const COUNT = 721; // -60 to 300 marks
+  const zs: number[] = [];
+  for (let i = 0; i < COUNT; i += 1) {
+    const m = LOW + i * STEP;
+    const w = Math.min(1, Math.max(0, weightAt(m)));
+    const z = (1 - w) * logit(a.toPercentile(m)) + w * logit(b.toPercentile(m));
+    zs.push(i === 0 ? z : Math.max(z, zs[i - 1] + 1e-6));
+  }
+  const zAt = (marks: number) => {
+    const x = (marks - LOW) / STEP;
+    if (x <= 0) return zs[0] + x * (zs[1] - zs[0]);
+    if (x >= COUNT - 1) return zs[COUNT - 1] + (x - COUNT + 1) * (zs[COUNT - 1] - zs[COUNT - 2]);
+    const i = Math.floor(x);
+    return zs[i] + (x - i) * (zs[i + 1] - zs[i]);
+  };
+  const toPercentile = (marks: number) => fromLogit(zAt(marks));
+  const toMarks = (percentile: number) => {
+    const z = logit(percentile);
+    let lo = 0;
+    let hi = COUNT - 1;
+    if (z <= zs[0]) return LOW + ((z - zs[0]) / (zs[1] - zs[0])) * STEP;
+    if (z >= zs[hi]) return LOW + hi * STEP + ((z - zs[hi]) / (zs[hi] - zs[hi - 1])) * STEP;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (zs[mid] < z) lo = mid;
+      else hi = mid;
+    }
+    return LOW + (lo + (z - zs[lo]) / (zs[hi] - zs[lo])) * STEP;
+  };
+  return {
+    method: a.method,
+    provisional: a.provisional,
+    pairs: a.pairs,
+    toPercentile,
+    toMarks,
+    marksPerPoint: (percentile) => {
+      const m = toMarks(percentile);
+      return 1 / Math.max(1e-6, toPercentile(m + 0.5) - toPercentile(m - 0.5));
+    },
+  };
+}

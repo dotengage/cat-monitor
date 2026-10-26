@@ -16,7 +16,6 @@ import type {
   AppState,
   Commitment,
   DayLog,
-  ErrorEntry,
   Goal,
   Habit,
   HabitDay,
@@ -81,9 +80,6 @@ export type Action =
   | { type: 'mock/delete'; id: ID }
   | { type: 'practice/add'; session: Omit<PracticeSession, keyof BaseFields> }
   | { type: 'practice/delete'; id: ID }
-  | { type: 'error/add'; entry: Omit<ErrorEntry, keyof BaseFields> }
-  | { type: 'error/update'; id: ID; patch: Partial<ErrorEntry> }
-  | { type: 'error/delete'; id: ID }
   | { type: 'day/log'; log: Omit<DayLog, keyof BaseFields> }
   | { type: 'day/study'; date: ISODate; section: SectionKey; minutes: number; topics: string }
   | { type: 'day/note'; date: ISODate; note: string }
@@ -373,26 +369,6 @@ export function reducer(state: AppState, action: Action): AppState {
         deletedIds: tombstone(state, action.id),
       };
 
-    case 'error/add':
-      return { ...state, errors: [...state.errors, stamped(action.entry) as ErrorEntry] };
-    case 'error/update': {
-      const errors = state.errors.map((e) => (e.id === action.id ? touch(e, action.patch) : e));
-      return {
-        ...state,
-        errors,
-        goals: state.goals.map((g) =>
-          g.metric === 'errors resolved'
-            ? touch(g, { targetValue: errors.length, currentValue: errors.filter((e) => e.resolved).length })
-            : g,
-        ),
-      };
-    }
-    case 'error/delete':
-      return {
-        ...state,
-        errors: state.errors.filter((e) => e.id !== action.id),
-        deletedIds: tombstone(state, action.id),
-      };
 
     /* --- Day logs ----------------------------------------------------- */
     case 'day/log': {

@@ -66,7 +66,7 @@ export function shortenTask(task: Task): { title: string; estimateMin: number; d
       return {
         title: `${task.title} (reduced)`,
         estimateMin,
-        detail: `Cut to the highest-value half: attempt 8 targeted questions, then classify every incorrect answer in the error log.`,
+        detail: `Cut to the highest-value half: attempt 8 targeted questions, then review every incorrect answer.`,
       };
     case 'study':
       return {

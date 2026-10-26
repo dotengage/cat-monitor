@@ -3,7 +3,7 @@
  *
  * Produces 3-5 weekly outcomes and a small number of specific, startable tasks
  * that fit inside 70-80% of realistic capacity. Candidate work is generated
- * from the current evidence (mock analysis debt, error log, weak topics,
+ * from the current evidence (mock analysis debt, weak topics,
  * coverage gaps, mock cadence), scored, then greedily selected and placed on
  * days that can actually host it.
  */
@@ -26,7 +26,6 @@ import { calculateWeekCapacity, energyForDate } from './capacity';
 import {
   clamp,
   coverageBySection,
-  errorsDueForReview,
   isOpen,
   sectionStats,
   topicStats,
@@ -107,9 +106,9 @@ function candidatesFor(state: AppState, weekStart: ISODate, today: ISODate, week
   for (const mock of unanalysedMocks(state).slice(0, 2)) {
     out.push({
       key: `analysis:${mock.id}`,
-      title: `Analyse ${mock.name || mock.provider} and classify every error`,
+      title: `Analyse ${mock.name || mock.provider}`,
       detail:
-        'Go through every incorrect and skipped question. For each: record the error type in the error log, write the corrected approach in one line, and note whether the question should have been attempted at all. Finish with the top 3 lessons.',
+        'Go through every incorrect and skipped question. For each: write what went wrong and the corrected approach in one line, and note whether the question should have been attempted at all. Finish with the top 3 lessons.',
       type: 'analysis',
       baseMin: params.mockAnalysisMin,
       importance: 'critical',
@@ -143,7 +142,7 @@ function candidatesFor(state: AppState, weekStart: ISODate, today: ISODate, week
       key: 'baseline-analysis',
       title: 'Record and analyse the baseline mock',
       detail:
-        'Enter overall and sectional scores, percentiles, attempts and accuracy in the Mock Centre. Then classify every incorrect question in the error log and identify the two weakest topics per section.',
+        'Enter overall and sectional scores, percentiles, attempts and accuracy in the Mock Centre. Then note what went wrong on each incorrect question and identify the two weakest topics per section.',
       type: 'analysis',
       baseMin: params.mockAnalysisMin,
       importance: 'critical',
@@ -167,20 +166,6 @@ function candidatesFor(state: AppState, weekStart: ISODate, today: ISODate, week
       outcomeKey: 'capacity',
       outcomeTitle: 'Establish realistic weekly capacity',
       outcomeMetric: '7 days logged',
-    });
-    out.push({
-      key: 'error-log-setup',
-      title: 'Log every incorrect question from this week with an error type',
-      detail:
-        'For each mistake record: section, topic, what went wrong (concept gap, calculation, misread, selection, too slow...), and the corrected approach in one line. Set a revisit date 7 days out.',
-      type: 'error-review',
-      baseMin: 30,
-      importance: 'critical',
-      energyRequired: 2,
-      impact: 5,
-      outcomeKey: 'error-system',
-      outcomeTitle: 'Establish error tracking',
-      outcomeMetric: 'Every mistake this week logged and classified',
     });
   } else {
     /* 3. Mocks on the recommended cadence. */
@@ -248,30 +233,10 @@ function candidatesFor(state: AppState, weekStart: ISODate, today: ISODate, week
     });
   }
 
-  /* 5. Error review, once there is anything to review. */
-  const dueErrors = errorsDueForReview(state, addDays(weekStart, 6));
-  if (dueErrors.length >= 3) {
-    const n = Math.min(dueErrors.length, 12);
-    out.push({
-      key: 'error-review',
-      title: `Re-solve ${n} logged errors from memory, without looking at the solution`,
-      detail:
-        'Work each one cold. Mark it resolved only if you reached the correct answer using the corrected approach; otherwise re-log it and set a new revisit date. Repeated error types are the cheapest percentile available.',
-      type: 'error-review',
-      baseMin: clamp(n * params.errorReviewMin, 20, 60),
-      importance: 'critical',
-      energyRequired: 3,
-      impact: 5,
-      outcomeKey: 'error-system',
-      outcomeTitle: 'Reduce repeated errors',
-      outcomeMetric: `${n} logged errors re-solved`,
-    });
-  }
-
-  /* 6. Weak-topic remediation, driven by measured accuracy. */
+  /* 5. Weak-topic remediation, driven by measured accuracy. */
   const weakTopics = topicStats(state)
     .filter((t) => t.status !== 'skipped')
-    .filter((t) => (t.attempted >= 8 && (t.accuracy ?? 1) < 0.6) || t.errorCount >= 3)
+    .filter((t) => (t.attempted >= 8 && (t.accuracy ?? 1) < 0.6) )
     .sort((a, b) => (a.accuracy ?? 1) - (b.accuracy ?? 1))
     .slice(0, 3);
   for (const topic of weakTopics) {
@@ -390,7 +355,7 @@ function candidatesFor(state: AppState, weekStart: ISODate, today: ISODate, week
     out.push({
       key: `revise:${topic.id}`,
       title: `Revise ${topic.name}: formulas, standard approaches, and 5 previously incorrect questions`,
-      detail: 'Work from your own notes first. Anything you cannot reconstruct from memory goes back into the error log.',
+      detail: 'Work from your own notes first. Anything you cannot reconstruct from memory goes on the revision list for next week.',
       type: 'revision',
       section: topic.section,
       topicId: topic.id,

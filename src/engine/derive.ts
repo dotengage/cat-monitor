@@ -8,7 +8,6 @@ import { SECTIONS } from '../config/catConfig';
 import { addDays, daysBetween } from '../domain/date';
 import type {
   AppState,
-  ErrorEntry,
   ID,
   ISODate,
   Mock,
@@ -137,11 +136,6 @@ export function topicStats(state: AppState): TopicStat[] {
     stat.correct += p.correct;
     stat.timeMin += p.timeMin;
   }
-  for (const e of state.errors) {
-    if (!e.topicId) continue;
-    const stat = byTopic.get(e.topicId);
-    if (stat) stat.errorCount += 1;
-  }
   for (const stat of byTopic.values()) {
     stat.accuracy = stat.attempted > 0 ? stat.correct / stat.attempted : null;
     stat.avgSecPerQuestion = stat.attempted > 0 ? (stat.timeMin * 60) / stat.attempted : null;
@@ -220,46 +214,15 @@ export function coverageBySection(state: AppState): Record<SectionKey, number> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Errors                                                              */
-/* ------------------------------------------------------------------ */
-
-export function openErrors(state: AppState): ErrorEntry[] {
-  return state.errors.filter((e) => !e.resolved);
-}
-
-export function errorsDueForReview(state: AppState, today: ISODate): ErrorEntry[] {
-  return openErrors(state).filter((e) => !e.revisitDate || e.revisitDate <= today);
-}
-
-/** Recurrence = repeated error types within a section over the recent window. */
-export function errorRecurrence(state: AppState, section: SectionKey, today: ISODate, windowDays = 28): number {
-  const cutoff = addDays(today, -windowDays);
-  const recent = state.errors.filter((e) => e.section === section && e.date >= cutoff);
-  if (recent.length < 2) return 0;
-  const counts = new Map<string, number>();
-  for (const e of recent) counts.set(e.errorType, (counts.get(e.errorType) ?? 0) + 1);
-  const repeated = [...counts.values()].filter((c) => c >= 2).reduce((a, c) => a + c, 0);
-  return repeated / recent.length;
-}
-
-export function errorCountsByType(state: AppState): { type: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const e of state.errors) counts.set(e.errorType, (counts.get(e.errorType) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([type, count]) => ({ type, count }))
-    .sort((a, b) => b.count - a.count);
-}
-
-/* ------------------------------------------------------------------ */
 /* Weakness                                                            */
 /* ------------------------------------------------------------------ */
 
 /**
  * Weakness per section on 0-1 (1 = weakest / most in need of attention).
- * Blends mock percentile gap, practice accuracy, coverage and error recurrence
+ * Blends mock percentile gap, practice accuracy and coverage
  * so the score still means something before any mock exists.
  */
-export function weaknessScores(state: AppState, today: ISODate): Record<SectionKey, number> {
+export function weaknessScores(state: AppState, _today: ISODate): Record<SectionKey, number> {
   const target = state.profile.targetPercentile;
   const coverage = coverageBySection(state);
   const stats = sectionStats(state);
@@ -280,7 +243,6 @@ export function weaknessScores(state: AppState, today: ISODate): Record<SectionK
       parts.push({ value: clamp01((0.85 - acc) / 0.35), weight: 2 });
     }
     parts.push({ value: clamp01(1 - coverage[section]), weight: 1.5 });
-    parts.push({ value: errorRecurrence(state, section, today), weight: 1 });
 
     const totalWeight = parts.reduce((a, p) => a + p.weight, 0);
     out[section] = totalWeight === 0 ? 0.5 : parts.reduce((a, p) => a + p.value * p.weight, 0) / totalWeight;

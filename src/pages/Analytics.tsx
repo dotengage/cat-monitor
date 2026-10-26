@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { ERROR_TYPE_LABELS, SECTIONS, SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
+import { SECTIONS, SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
 import { addDays, formatDate, formatHours, startOfWeek } from '../domain/date';
-import type { ErrorType, TaskType } from '../domain/types';
-import { errorCountsByType, fullMocks, overallPercentileHistory, topicStats } from '../engine/derive';
+import type { TaskType } from '../domain/types';
+import { fullMocks, overallPercentileHistory, topicStats } from '../engine/derive';
 import { buildEstimationModel } from '../engine/estimation';
 import { useStore } from '../state/store';
 import { BarPairChart, ChartLegend, HBarList, TrendChart } from '../ui/charts';
@@ -36,7 +36,6 @@ export function Analytics() {
 
   const percentiles = overallPercentileHistory(state);
   const topics = topicStats(state).filter((t) => t.attempted >= 5);
-  const errors = errorCountsByType(state);
   const model = buildEstimationModel(state, state.settings.planning);
 
   const dilrSeries = useMemo(() => {
@@ -230,20 +229,6 @@ export function Analytics() {
         )}
       </Card>
 
-      <Card title="Error category distribution">
-        {errors.length === 0 ? (
-          <Empty>No errors logged yet.</Empty>
-        ) : (
-          <HBarList
-            items={errors.map((e) => ({
-              label: ERROR_TYPE_LABELS[e.type as ErrorType] ?? e.type,
-              value: e.count,
-              tone: 'warn' as const,
-            }))}
-          />
-        )}
-      </Card>
-
       <Card title="DILR sets solved over time">
         {dilrSeries.length === 0 ? (
           <Empty>No DILR sets logged yet.</Empty>
@@ -267,7 +252,6 @@ export function Analytics() {
           />
           <Stat label="Questions logged" value={state.practice.reduce((a, p) => a + p.attempted, 0)} />
           <Stat label="DILR sets" value={state.practice.reduce((a, p) => a + (p.setsAttempted ?? 0), 0)} />
-          <Stat label="Errors logged" value={state.errors.length} />
         </StatGrid>
       </Card>
 

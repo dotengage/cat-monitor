@@ -153,7 +153,9 @@ describe('Scenario 9: remaining work exceeds capacity', () => {
 
     const feasibility = calculateFeasibility(state, TODAY);
     expect(feasibility.safety.breached).toBe(true);
-    expect(['AT_RISK', 'OFF_TRACK']).toContain(feasibility.status);
+    // The plan not fitting the hours moves the status one step down the ladder.
+    const ladder = ['ON_TRACK', 'STRETCH', 'AT_RISK', 'OFF_TRACK'];
+    expect(ladder.indexOf(feasibility.status)).toBe(ladder.indexOf(calculateForecast(state, TODAY).status) + 1);
     expect(feasibility.safety.suggestions.join(' ')).toMatch(/lowest-weight topics/i);
 
     const withJunk = {

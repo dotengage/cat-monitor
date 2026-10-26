@@ -6,7 +6,7 @@ This is not a timetable generator, a habit tracker, or a productivity app. It ex
 
 > **Given everything that has actually happened, what is the highest-value realistic thing I should do next?**
 
-It optimises for exam readiness — mock performance, section balance, error reduction, question selection — not for making a schedule look full. Hours are an input. Percentile is the outcome.
+It optimises for exam readiness — mock performance, section balance, question selection — not for making a schedule look full. Hours are an input. Percentile is the outcome.
 
 ---
 
@@ -40,7 +40,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 | Area | Behaviour |
 | --- | --- |
 | **Onboarding** | Collects goal, exam date, commitments, realistic availability, energy profile and any existing mock data before generating anything. |
-| **Forecast** | Works in marks, weights recent mocks, tests the trend for significance, finds the binding constraint from variance, and simulates exam day as a range. Rule-based status: `ON TRACK` / `STRETCH` / `AT RISK` / `OFF TRACK`, with the rule printed. |
+| **Forecast** | Works in marks, weights recent mocks, tests the trend for significance, finds where your next marks are, and reads exam day on the real CAT's marks-to-percentile scale as an off day / likely / great day range. Status is written to encourage: *On track*, *Within reach*, *Closing the gap*, *Building up*. |
 | **Capacity model** | `base × energy × commitments × learned realism`, then 20–30% buffer held back. Every factor is shown and configurable. |
 | **Weekly planning** | 3–5 outcomes and a small number of specific, startable tasks that fit inside planned capacity. |
 | **Daily planning** | 1–2 must-do, 1–2 should-do, 1 optional, plus visible unallocated buffer. No hourly timetable. |
@@ -49,11 +49,11 @@ It optimises for exam readiness — mock performance, section balance, error red
 | **Habits & streaks** | Configurable daily habits with a day score, current streak, best streak and consistency. |
 | **Missed-task algorithm** | Every miss gets a fresh decision: reschedule, shorten, combine, postpone, delegate, replace or remove. Nothing carries forward automatically. |
 | **Behaviour learning** | Rolling averages on estimate-vs-actual, time-of-day completion rates, postponement patterns and weekly capacity drift. |
-| **CAT tracking** | VARC / DILR / QA with topic-level accuracy, DILR set-level tracking and miss reasons, and a classified error log. |
+| **CAT tracking** | VARC / DILR / QA with topic-level accuracy, and DILR set-level tracking and miss reasons. |
 | **Flashcards** | Anki-style decks with screenshot or text cards (Ctrl+V straight into a field), Anki's own spaced-repetition scheduler, a card browser, statistics, and `.colpkg` / `.apkg` import and export that real Anki reads. |
 | **Mock Centre** | A mock is incomplete until it is analysed. Analysis debt throttles the mock cadence. |
 | **Weekly review** | Seven questions in, a full recalculation and next week's plan out. |
-| **Analytics** | Plan vs reality, mock trends, completion rates, estimate drift, topic accuracy, error distribution, DILR volume. |
+| **Analytics** | Plan vs reality, mock trends, completion rates, estimate drift, topic accuracy, DILR volume. |
 | **Decision log** | Every automatic change is recorded with its reason, and every one can be overridden. |
 | **PDF reports** | One-click export of the complete mock report and analytics report, generated in-app with no dependency and no print dialog. |
 | **Device sync** | Optional. Keeps phone and computer in step through one secret gist in your own GitHub account. Per-record merge, so simultaneous edits on both devices do not overwrite each other. |
@@ -68,7 +68,7 @@ These are enforced in code, not just documentation:
 2. **The plan adapts.** It is rebuilt from actual data, not patched.
 3. **Buffer is protected.** Planning uses ~70–80% of realistic capacity. Buffer is never allocated.
 4. **No task debt.** Missed work is judged, not stacked onto tomorrow. The system will say "this is no longer worth carrying forward."
-5. **No fake certainty.** Every number carries its range and the evidence behind it. A chance of reaching the target is shown only as the share of simulated papers that reach it, beside the band it came from, and it is labelled indicative when the mocks behind it are few.
+5. **No fake certainty.** Every number carries its range and the evidence behind it. A chance of reaching the target is the share of simulated exam papers that reach it, always shown beside the range it came from.
 6. **Diagnose the system, not the user.** The copy says "your original estimate was inaccurate", never "you failed to follow your plan."
 7. **The user can always override.** Keep, move, protect, remove, ignore — all available on every task.
 
@@ -81,7 +81,7 @@ src/
   config/catConfig.ts      Sections, topic seeds, planning parameters, labels.
                            The only place CAT specifics are defined.
   domain/
-    types.ts               Typed entities: Task, Goal, WeekPlan, Mock, ErrorEntry…
+    types.ts               Typed entities: Task, Goal, WeekPlan, Mock…
     date.ts                Local-calendar ISO date maths (never UTC-shifted).
     ids.ts                 Stable id generation.
   engine/                  Pure, testable planning logic. No React, no storage.
@@ -121,7 +121,7 @@ src/
     charts/                Hand-rolled SVG charts (no charting library).
     layout/Shell.tsx       Hash router, sidebar (desktop), bottom nav (mobile).
     layout/icons.tsx       Eleven inline stroke icons.
-  pages/                   Home, Today, Week, Log, Goals, CAT, Mocks, Errors,
+  pages/                   Home, Today, Week, Log, Goals, CAT, Mocks,
                            Review, Analytics, Settings, Onboarding.
 ```
 
@@ -157,7 +157,6 @@ Each week, work is generated from current evidence, in this order of value:
 2. Baseline mock, if none exists
 3. Mocks on the derived cadence, with a paired analysis task the following day
 4. Sectionals, weighted towards the weakest sections
-5. Error review, once enough logged errors are due
 6. Weak-topic remediation, driven by measured accuracy
 7. Coverage of high-weight topics not yet built (de-emphasised as the exam nears)
 8. Standing RC and DILR volume
@@ -227,15 +226,13 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 
 ## How the CAT tracker works
 
-**Sections.** Each section's readiness is its recency-weighted level from full mocks, converted to section percentile through a curve fitted to your own section marks and percentiles, with the latest percentile, the average of the last five, a significance-tested trend, an exam-day range, one target attempt band and one accuracy floor. Topic coverage, sets solved and error recurrence are deliberately not part of it: they are inputs to planning, not measures of readiness.
+**Sections.** Each section's readiness is its recency-weighted level from full mocks, converted to section percentile through a curve fitted to your own section marks and percentiles, with the latest percentile, the average of the last five, a significance-tested trend, an exam-day range, one target attempt band and one accuracy floor. Topic coverage and sets solved are deliberately not part of it: they are inputs to planning, not measures of readiness.
 
 **Topics.** ~40 seeded topics with an exam weight (1–5) and an hours-to-competence estimate, each moving through `not-started → learning → practised → strong` (or `skipped`). Topic status drives the remaining-workload projection, and is edited from Goals.
 
 **DILR** is tracked at set level, not just question level: sets attempted, sets solved, time per set, and why each set was missed (chose incorrectly, understood but could not solve, calculation, logic, time, abandoned too late, abandoned too early, careless).
 
-**Error log.** Twelve error categories, each entry carrying date, section, topic, question reference, what went wrong, the corrected approach, a revisit date and resolution state. Error history feeds directly into what gets planned next: repeated types raise the priority of the matching topics and generate error-review tasks.
-
-**Mocks.** Scores can be corrected after the fact with *Edit scores* — the analysis, lessons and weak topics you recorded stay attached, and the corrected numbers flow straight into the forecast. A mock is only complete when it has been attempted, recorded, analysed, its errors classified, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
+**Mocks.** Scores can be corrected after the fact with *Edit scores* — the analysis, lessons and weak topics you recorded stay attached, and the corrected numbers flow straight into the forecast. A mock is only complete when it has been attempted, recorded, analysed, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
 
 **The forecast** (`src/engine/forecast/`) follows a written methodology, step by step:
 
@@ -243,10 +240,11 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 2. **Marks, not percentiles.** Percentile is compressed near the top, so averaging it distorts both level and trend. All arithmetic is in marks; a curve fitted to your own (marks, percentile) pairs converts back at the end - a logistic once there are five pairs, a provisional logit-space interpolation before that. It also tells you how many marks one more percentile point costs at your level.
 3. **Current level** is a recency-weighted mean of marks (21-day half-life) with a one-SD band. Never the latest mock.
 4. **Trend** is a weighted regression with a 90% interval: `RISING` or `FALLING` only when the interval excludes zero; otherwise `FLAT` or `VOLATILE` by the spread of the last five. Block averages are reported alongside, and lead when they rise but the regression cannot confirm it. Under six mocks it is labelled directional.
-5. **Binding constraint** is the section with the highest variance share x ceiling gap, never the lowest section in the last mock, and is classified as a *consistency* gap or a *capability* gap because they need opposite remedies. Not named from fewer than three mocks.
-6. **Exam day** is 10,000 papers resampled as whole mocks (so a bad VARC day and a bad QA day stay the same day), with drift only when the trend is significant and capped, and provider noise added. Reported as bad day / likely / great day with the conditions for each. Guardrails: the likely value never exceeds your demonstrated best unless marks are significantly rising; under five mocks the band is widened and marked indicative.
-7. **Status** is a rule on the gap between target and likely percentile (1 / 4 / 8 points), plus `HIGH VARIANCE` above a 10-point spread, and the rule is printed with it.
-8. **Error patterns** are mined from your analysis notes into eight behaviour categories, tracked as new, persistent or improving, and notes that contradict each other across dates are flagged. Topic work is recommended only when concept gaps are a top-two pattern.
+5. **Where your next marks are** is the section with the highest variance share x ceiling gap, never the lowest section in the last mock, and is classified as a *consistency* or a *capability* gap because they need opposite remedies. Not named from fewer than three mocks.
+6. **Exam day** is 10,000 papers resampled as whole mocks (so a weak VARC day and a weak QA day stay the same day). With a significant trend, older papers are first brought up to today's level along it (at most 1.5 marks a week), and forward drift is capped the same way. Reported as off day / likely / great day with the conditions for each. Guardrails: the likely value never exceeds your demonstrated best unless marks are significantly rising; under five mocks the band is widened; and **an off day is never more than 6 percentile points below the likely one**: the exam is one prepared sitting, not a run of weekly mocks with their off weeks.
+6b. **The real exam's scale.** Mock providers set harder papers to stronger fields, so their percentiles understate exam day. Exam-day marks are read through a blend of your own mocks' curve and a reference curve for the actual CAT (about 55 marks for the 90th percentile, 65 for 93 to 95, 75 for 97, high 80s for 99). Inside the range your mocks cover the two are weighted evenly; above your best paper your own curve is only extrapolating, so the real exam's takes over across the next 10 marks. Current level stays on your mocks' own scale.
+7. **Status** is a rule on the gap between target and likely percentile (1 / 4 / 8 points), shown as *On track*, *Within reach*, *Closing the gap* or *Building up*, with how many points there are to go.
+8. **Notes from mock analysis** are tagged into eight behaviour categories behind the scenes. Topic work is recommended only when concept gaps are among the top two.
 
 The same blocks, in the same order, make up the mock report PDF. The simulation is seeded from the evidence, so the same mocks always give the same answer.
 
@@ -408,7 +406,7 @@ The default icon (`public/favicon.svg`) is an almost-complete progress ring with
 
 **Mocks → Export PDF** produces the complete mock report: summary figures, trajectory with its reasoning, a percentile chart, section readiness, then every mock with its sectional breakdown, notes and lessons, and a flag on any that remain unanalysed.
 
-**Analytics → Export PDF** produces the complete analytics report: feasibility and its evidence, the remaining-workload breakdown, plan vs reality by week, mock and sectional trends, the study log, habits, topic accuracy, error categories and estimation drift.
+**Analytics → Export PDF** produces the complete analytics report: feasibility and its evidence, the remaining-workload breakdown, plan vs reality by week, mock and sectional trends, the study log, habits, topic accuracy and estimation drift.
 
 Both are generated in the app and download as real `.pdf` files — no print dialog, which matters in an installed PWA where printing is unreliable.
 
@@ -430,7 +428,7 @@ If the second device has not been set up yet, use **"Restore from another device
 
 ### Spaces: one account, several independent datasets
 
-A token proves *which GitHub account* you are; it does not say *which dataset* you want. So the app never joins one automatically. After the token is validated it lists every CAT Monitor dataset in the account — with task, mock and error counts, target percentile, exam date and device names — and you either join one explicitly or create a separate space.
+A token proves *which GitHub account* you are; it does not say *which dataset* you want. So the app never joins one automatically. After the token is validated it lists every CAT Monitor dataset in the account — with task and mock counts, target percentile, exam date and device names — and you either join one explicitly or create a separate space.
 
 Separate spaces share nothing. This matters in two situations:
 
@@ -457,14 +455,14 @@ Automatically a few seconds after you make a change, when you reopen the app, an
 
 ### How conflicts are resolved
 
-Per record, not per document. Every task, mock, error and log entry carries an `updatedAt`, and the newer edit of *each individual record* wins. Tick tasks off on your phone during the day while your laptop sits open on the Week view, and nothing is lost — "last device to sync" never overwrites the other wholesale.
+Per record, not per document. Every task, mock and log entry carries an `updatedAt`, and the newer edit of *each individual record* wins. Tick tasks off on your phone during the day while your laptop sits open on the Week view, and nothing is lost — "last device to sync" never overwrites the other wholesale.
 
 Deletions are remembered as tombstones (pruned after 90 days) so a record deleted on one device is not resurrected by the other. A device that has never been used adopts the existing data outright instead of merging its own blank seed into it. All of this is covered by tests in `src/data/sync/__tests__/merge.test.ts` — it is the code most capable of losing data, so it is the most heavily tested.
 
 ### What to know before enabling it
 
 - **The token is stored on each device** (browser local storage) and is never included in exports or in the synced file. It can only touch Gists — nothing else in your GitHub account.
-- **A "secret" gist is unlisted, not access-controlled.** Anyone who has its 32-character address could read it. Treat the link as private. The gist contains your mock scores, task titles and error notes — no passwords and no contact details.
+- **A "secret" gist is unlisted, not access-controlled.** Anyone who has its 32-character address could read it. Treat the link as private. The gist contains your mock scores, task titles and analysis notes — no passwords and no contact details.
 - **Disconnecting** removes the token from that device only. Your data stays, on both the device and GitHub.
 - **The gist keeps full revision history.** If a sync ever goes wrong, open the gist on GitHub, pick an earlier revision, copy its raw JSON and use **Settings → Import backup** — the app reads that file format directly.
 
@@ -488,7 +486,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 - **Topics** — edit `TOPIC_SEEDS`. Each entry has a `name`, `section`, `area`, `baseHours` (time to working competence) and `weight` (1–5 exam value). Weight drives both planning priority and the remaining-workload projection.
   You can also add, rename or skip topics in-app from the **CAT** page; seeds only apply to a fresh install.
 - **Sections** — `SECTIONS`, `SECTION_LABELS`, `SECTION_FULL_NAMES`, `SECTION_DURATION_MIN`.
-- **Planning parameters** — `DEFAULT_PLANNING`: buffer percentage, tasks per day, energy factors, estimation learning rate and bounds, mock/sectional/analysis durations, error-review and revision budgets. Most are also editable from **Settings** at runtime.
+- **Planning parameters** — `DEFAULT_PLANNING`: buffer percentage, tasks per day, energy factors, estimation learning rate and bounds, mock/sectional/analysis durations and revision budgets. Most are also editable from **Settings** at runtime.
 - **Phase thresholds** — `PHASE_THRESHOLDS` decides when the plan moves from foundation to application to readiness. These are days-remaining bands, not hardcoded months.
 - **Target and exam date** — `DEFAULT_TARGET_PERCENTILE` and `DEFAULT_EXAM_DATE` seed a fresh install; both are editable in Settings, and every date calculation derives from `examDate − today`.
 - **Mock providers** — `DEFAULT_MOCK_PROVIDERS`.
@@ -501,7 +499,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-414 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
+421 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |
@@ -519,11 +517,11 @@ npm test
 
 `src/data/sync/__tests__/merge.test.ts` covers two-device merges: simultaneous edits, deletions, tombstone expiry, idempotence, symmetry (both devices converge on the same answer), and a brand-new device adopting existing data rather than duplicating it.
 
-`src/engine/forecast/__tests__/` is organised around the forecasting guide: data hygiene, the "flat", "blame QA" and "projected = current" bugs, the status thresholds, error-pattern mining, and the output's hard rules (no em dashes, never 0 for missing data, never the same advice twice).
+`src/engine/forecast/__tests__/` is organised around the forecasting guide: data hygiene, the "flat", "blame QA" and "projected = current" bugs, the status thresholds, the exam-day scale and off-day floor, note tagging, and the output's hard rules (no em dashes, never 0 for missing data, never the same advice twice).
 
 `src/flashcards/__tests__/` reproduces Anki's buttons for a new card, its review-card rules, fuzz bands and leech rule; the queue's daily limits and ordering; the card sanitiser against script, event-handler and remote-image attacks; and import and export against real `.colpkg` files made by Anki's own library, in both formats.
 
-`src/state/__tests__/store.test.ts` walks the same path the UI does — onboarding, completing and missing work, applying a decision, recording and analysing a mock, logging errors, running the review — and asserts on the resulting state.
+`src/state/__tests__/store.test.ts` walks the same path the UI does — onboarding, completing and missing work, applying a decision, recording and analysing a mock, retiring the old error log, running the review — and asserts on the resulting state.
 
 ---
 
@@ -532,8 +530,7 @@ npm test
 Stated plainly, because the app's whole premise is not overstating what it knows:
 
 - **The capacity formula is a planning aid, not a prediction.** It cannot know that you will be ill on Thursday. That is what buffer is for.
-- **The forecast is only as good as the mocks behind it.** Three mocks are three data points. Under five, the band is widened and labelled indicative; under three, no trend or constraint is named at all. Mock percentiles are not exam percentiles either, which is why provider noise is part of every simulation.
-- **Error-pattern tags are keyword matching.** They are evidence to read, not a diagnosis, and the contradiction check can flag two notes that only look opposed.
+- **The forecast is only as good as the mocks behind it.** Three mocks are three data points. Under five, the band is widened and labelled indicative; under three, no trend or constraint is named at all. Mock percentiles are not exam percentiles either, which is why exam day is read on the real exam's scale and mock-to-exam noise is part of every simulation. The reference curve is typical of recent years, not a promise about this one.
 - **Topic hour estimates are generic**, not personalised, until you have logged enough practice for accuracy data to take over.
 - **No natural-language input yet.** Quick actions cover the common updates (low energy, unexpected commitment, travel, finished early, missed). Free-text parsing would sit behind an interface so an AI API could be added later — the core planner must keep working without one.
 - **Sync is eventually consistent, not real-time.** Changes propagate within seconds of an edit settling, or when you reopen the app — not instantly while both devices are open. Two devices editing *the same record* within the same few seconds resolve to the newer edit, so one of the two is discarded by design.

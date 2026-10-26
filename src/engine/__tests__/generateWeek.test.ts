@@ -19,10 +19,10 @@ describe('generateWeek - first week without a baseline', () => {
     expect(generated.week.outcomes.map((o) => o.title)).toContain('Establish baseline performance');
   });
 
-  it('includes capacity calibration and error tracking as first-week outcomes', () => {
+  it('includes capacity calibration as a first-week outcome', () => {
     const outcomes = generated.week.outcomes.map((o) => o.title);
     expect(outcomes.some((o) => /capacity/i.test(o))).toBe(true);
-    expect(outcomes.some((o) => /error/i.test(o))).toBe(true);
+    expect(outcomes.some((o) => /error/i.test(o))).toBe(false);
   });
 
   it('stays inside planned capacity and leaves buffer', () => {
@@ -70,11 +70,11 @@ describe('generateWeek - with evidence', () => {
     expect(generated.tasks.some((t) => t.type === 'analysis' && /IMS SimCAT 3/.test(t.title))).toBe(true);
   });
 
-  it('generates error-review work once enough errors are logged', () => {
+  it('no longer plans error-review work, even with errors in old data', () => {
     const errors = Array.from({ length: 8 }, (_, i) => makeError({ question: `Q${i}`, date: addDays(TODAY, -3) }));
     const state = makeState({ mocks: [makeMock()], errors });
     const generated = generateWeek(state, WEEK_START, TODAY);
-    expect(generated.tasks.some((t) => t.type === 'error-review')).toBe(true);
+    expect(generated.tasks.some((t) => t.type === 'error-review')).toBe(false);
   });
 
   it('reduces planned volume when travel eats the week', () => {

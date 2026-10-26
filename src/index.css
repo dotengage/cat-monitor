@@ -437,7 +437,7 @@ a:hover { text-decoration: underline; }
   border-top: 3px solid var(--border-strong);
 }
 
-.scenario-bad { border-top-color: var(--risk); }
+.scenario-bad { border-top-color: var(--warn); }
 .scenario-likely { border-top-color: var(--accent); }
 .scenario-great { border-top-color: var(--ok); }
 
@@ -1598,16 +1598,14 @@ tr.is-today td { background: var(--accent-soft); }
 .menu-trigger { letter-spacing: 0.08em; min-width: 34px; padding-left: 8px; padding-right: 8px; }
 
 .menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
   min-width: 178px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   padding: 5px;
-  z-index: 40;
+  z-index: 300;
   animation: rise 0.18s var(--ease) both;
 }
 

@@ -395,7 +395,6 @@ function AnalysisModal({ mock, onClose }: { mock: Mock; onClose: () => void }) {
   const [lessons, setLessons] = useState<string[]>([mock.lessons[0] ?? '', mock.lessons[1] ?? '', mock.lessons[2] ?? '']);
   const [weakTopicIds, setWeakTopicIds] = useState<string[]>(mock.weakTopicIds ?? []);
 
-  const errorsLogged = state.errors.filter((e) => e.mockId === mock.id).length;
   const canComplete = lessons.filter((l) => l.trim()).length >= 1 && weakTopicIds.length > 0;
 
   return (
@@ -444,11 +443,6 @@ function AnalysisModal({ mock, onClose }: { mock: Mock; onClose: () => void }) {
         </>
       }
     >
-      <Callout tone={errorsLogged > 0 ? 'ok' : 'warn'}>
-        {errorsLogged > 0
-          ? `${errorsLogged} error(s) from this mock are already in the error log.`
-          : 'No errors from this mock have been logged yet. Classify every incorrect and skipped question in the Errors page.'}
-      </Callout>
       <Field label="Time-management notes" htmlFor="atime">
         <textarea id="atime" value={timeNotes} onChange={(e) => setTimeNotes(e.target.value)} placeholder="Where did time actually go? Which questions ate more than they were worth?" />
       </Field>

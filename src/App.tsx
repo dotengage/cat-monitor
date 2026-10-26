@@ -3,7 +3,6 @@ import { DEFAULT_BRAND_NAME, themeMeta } from './config/themes';
 import { daysBetween } from './domain/date';
 import { Analytics } from './pages/Analytics';
 import { CAT } from './pages/CAT';
-import { Errors } from './pages/Errors';
 import { Flashcards } from './pages/Flashcards';
 import { Goals } from './pages/Goals';
 import { Home } from './pages/Home';
@@ -101,7 +100,6 @@ function Router() {
       {route === 'goals' && <Goals />}
       {route === 'cat' && <CAT />}
       {route === 'mocks' && <Mocks />}
-      {route === 'errors' && <Errors />}
       {route === 'review' && <Review />}
       {route === 'analytics' && <Analytics />}
       {route === 'settings' && <Settings />}

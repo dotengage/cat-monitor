@@ -1,5 +1,6 @@
 import { SECTION_LABELS } from '../config/catConfig';
 import { daysBetween, formatHours, formatLongDate } from '../domain/date';
+import { TREND_WORDS } from '../engine/forecast';
 import { calculateHabitStats } from '../engine/habits';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
@@ -110,7 +111,7 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
             <p>{feasibility.nextAction}</p>
             {/* Only pair the advice with a task that actually serves it. The planner
                 allocates by its own weighting, so today's first task is not
-                necessarily about the binding constraint. */}
+                necessarily about the focus area. */}
             {constraintTask && (
               <p className="small muted">
                 Today, that means: <strong>{constraintTask.title}</strong>
@@ -118,7 +119,7 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
             )}
           </div>
 
-          <Collapse title="What this is based on">
+          <Collapse title="Details">
             <div className="table-wrap">
               <table>
                 <tbody>
@@ -131,17 +132,13 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
                 </tbody>
               </table>
             </div>
-            <p className="tiny faint" style={{ marginTop: 8 }}>
-              Any chance shown is the share of 10,000 simulated papers, resampled from your own recent mocks, that
-              reach the target. It is only as good as those mocks, and it says so when there are too few.
-            </p>
           </Collapse>
         </Card>
 
         {/* Where the evidence puts exam day: a band, never a single number. */}
         <Card title="Exam-day forecast" onOpen={() => navigate('cat')} openLabel="Readiness">
           {!forecast.forecast?.percentile ? (
-            <Empty>{forecast.statusRule.replace(/^No status: /, '')}</Empty>
+            <Empty>{forecast.statusRule}</Empty>
           ) : (
             <>
               <div className="goal-line">
@@ -154,24 +151,16 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
               <Progress
                 value={forecast.forecast.percentile.p50}
                 max={forecast.target}
-                tone={
-                  forecast.status === 'OFF_TRACK'
-                    ? 'risk'
-                    : forecast.status === 'AT_RISK' || forecast.status === 'STRETCH'
-                      ? 'warn'
-                      : 'ok'
-                }
+                tone={forecast.status === 'ON_TRACK' || forecast.status === 'STRETCH' ? 'ok' : 'accent'}
               />
               <div className="goal-foot tiny muted">
                 <span>
-                  Range {Math.round(forecast.forecast.percentile.p10)} to {Math.round(forecast.forecast.percentile.p90)}
-                  {forecast.forecast.indicative ? ' (indicative)' : ''}
+                  {Math.round(forecast.forecast.percentile.p10)} to {Math.round(forecast.forecast.percentile.p90)}
                 </span>
                 <span>{daysRemaining}d left</span>
               </div>
               <p className="tiny muted" style={{ marginTop: 10 }}>
                 Chance of reaching {forecast.target}: <strong>{chance(forecast.forecast.probability ?? 0)}</strong>
-                {forecast.highVariance ? '. High variance between papers.' : '.'}
               </p>
             </>
           )}
@@ -182,9 +171,7 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
             <div>
               <span className="mono">{forecast.analysedMocks}</span> analysed
             </div>
-            <div>
-              trend <span className="mono">{forecast.trend.label.toLowerCase()}</span>
-            </div>
+            <div>{TREND_WORDS[forecast.trend.label].toLowerCase()}</div>
           </div>
         </Card>
 
@@ -256,10 +243,10 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
           )}
         </Card>
 
-        {/* 5. What is putting the target at risk? */}
-        <Card title="Biggest risk">
+        {/* 5. The one thing most worth attention. */}
+        <Card title="Where to focus">
           {feasibility.safety.breached ? (
-            <Callout tone={feasibility.safety.severity === 'critical' ? 'risk' : 'warn'}>
+            <Callout tone="warn">
               <div>{feasibility.safety.message}</div>
               <ul className="bullets tiny" style={{ marginTop: 8 }}>
                 {feasibility.safety.suggestions.slice(0, 3).map((s) => (
@@ -268,7 +255,7 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
               </ul>
             </Callout>
           ) : biggestRisk ? (
-            <Callout tone={biggestRisk.severity === 'critical' ? 'risk' : 'warn'}>
+            <Callout tone="warn">
               <strong>{biggestRisk.title}</strong>
               <div className="small" style={{ marginTop: 4 }}>
                 {biggestRisk.detail}
@@ -279,19 +266,15 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
             </Callout>
           ) : forecast.constraint.established && forecast.constraint.top[0] ? (
             <Callout>
-              <strong>{SECTION_LABELS[forecast.constraint.top[0].section]}</strong> is the binding constraint, a{' '}
-              {forecast.constraint.top[0].kind === 'CONSISTENCY' ? 'consistency' : 'capability'} gap.
-              <div className="small" style={{ marginTop: 4 }}>
-                {forecast.constraint.top[0].why}
-              </div>
+              <strong>{SECTION_LABELS[forecast.constraint.top[0].section]}</strong> is where your next marks are:{' '}
+              {forecast.constraint.top[0].kind === 'CONSISTENCY'
+                ? 'steadier papers there lift the whole score.'
+                : 'raising its ceiling lifts the whole score.'}
             </Callout>
           ) : state.mocks.length === 0 ? (
-            <Callout tone="warn">
-              The biggest risk right now is that nothing is measured. Until a baseline mock exists, every section looks
-              identical to the system and no constraint can honestly be named.
-            </Callout>
+            <Callout>Take a baseline mock: it shows which section holds your quickest marks.</Callout>
           ) : (
-            <Callout tone="ok">No capacity or feasibility breach detected right now.</Callout>
+            <Callout tone="ok">Your plan fits your hours. Keep going.</Callout>
           )}
         </Card>
 
