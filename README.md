@@ -19,6 +19,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 - [Planning your own work](#planning-your-own-work)
 - [The daily log and streaks](#the-daily-log-and-streaks)
 - [How the CAT tracker works](#how-the-cat-tracker-works)
+- [Flashcards](#flashcards)
 - [How weekly recalculation works](#how-weekly-recalculation-works)
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
@@ -49,6 +50,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 | **Missed-task algorithm** | Every miss gets a fresh decision: reschedule, shorten, combine, postpone, delegate, replace or remove. Nothing carries forward automatically. |
 | **Behaviour learning** | Rolling averages on estimate-vs-actual, time-of-day completion rates, postponement patterns and weekly capacity drift. |
 | **CAT tracking** | VARC / DILR / QA with topic-level accuracy, DILR set-level tracking and miss reasons, and a classified error log. |
+| **Flashcards** | Anki-style decks with screenshot or text cards (Ctrl+V straight into a field), Anki's own spaced-repetition scheduler, a card browser, statistics, and `.colpkg` / `.apkg` import and export that real Anki reads. |
 | **Mock Centre** | A mock is incomplete until it is analysed. Analysis debt throttles the mock cadence. |
 | **Weekly review** | Seven questions in, a full recalculation and next week's plan out. |
 | **Analytics** | Plan vs reality, mock trends, completion rates, estimate drift, topic accuracy, error distribution, DILR volume. |
@@ -249,6 +251,42 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 The same blocks, in the same order, make up the mock report PDF. The simulation is seeded from the evidence, so the same mocks always give the same answer.
 
 ---
+
+## Flashcards
+
+Built to behave like Anki, because that is what the habit is formed around: **Flashcards** in the navigation (**Cards** on a phone).
+
+**Decks and cards.** Create as many decks as you like. **+ Add** opens Anki's Add window: pick the deck, then type into Front and Back or paste a screenshot with <kbd>Ctrl</kbd>+<kbd>V</kbd> (drop and 📎 attach work too). Bold, italic, underline, sub/superscript and lists are on the toolbar. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> adds the card and clears both sides for the next one, keeping the deck and tags, because cards are made in batches.
+
+**Studying.** Click a deck for its overview - new, learning and due counts in Anki's blue, red and green - then **Study now**. The card turns over to show the answer; the four buttons show exactly when the card will come back.
+
+| Key | Action |
+| --- | --- |
+| <kbd>Space</kbd> / <kbd>Enter</kbd> | Show answer, then Good |
+| <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> | Again, Hard, Good, Easy |
+| <kbd>Z</kbd> | Undo the last answer |
+| <kbd>E</kbd> | Edit the card on screen |
+| <kbd>Esc</kbd> | Back to the deck |
+
+**The scheduler** (`src/flashcards/scheduler.ts`) is Anki's default SM-2-derived algorithm as Anki's own source implements it, not textbook SM-2: learning steps in minutes (1m 10m), a one-day graduating and four-day easy interval, 250% starting ease, Hard x1.2 / Easy bonus x1.3, ease that moves only on review cards (-20 / -15 / +15, floor 130%), credit for reviewing late, separate minimums that keep Hard, Good and Easy apart, relearning after a lapse, leeches at eight lapses, a 4am day boundary, and Anki's interval fuzz - seeded per card, so the interval on a button is exactly what pressing it gives. With default options a new card shows `<1m · <6m · <10m · 3d`, as in Anki. Every option is editable per deck, with a button to restore Anki's defaults. FSRS, Anki's optional alternative, is not implemented.
+
+**Browse** lists every card with Anki-style search (`deck:`, `tag:`, `is:new` / `learn` / `review` / `due` / `suspended` / `leech`, `-` to negate), sorting, an editor beside the list, a flip preview, and bulk move, suspend, forget and delete.
+
+**Stats** shows today's work, true retention for young and mature cards (review answers that were not Again - the number spaced repetition is trying to hold steady), card counts, reviews per day, the next 30 days' workload, a calendar, interval spread and the answer-button breakdown.
+
+### Importing and exporting Anki packages
+
+**Import** reads `.colpkg` (a whole Anki collection) and `.apkg` (a deck package), in both the modern format (Anki 2.1.50+, zstd-compressed, database schema 18) and the legacy one. Note types are rendered through their templates, so Basic, reversed, optional-reversed, type-in and cloze notes all arrive as proper cards; formatting and images come with them; scheduling, deck options and review history are kept. Importing the same package twice adds nothing.
+
+**Export** writes everything to one `.colpkg` in the "support older Anki versions" format, which every Anki release imports. Cards made here keep their identity through an export and re-import.
+
+Both directions are tested against packages made by Anki's own library (26.09), and the exporter's output was imported with Anki's own backend: every card, review, deck, option and image arrived, and Anki's *Check Database* found nothing to repair. Reading SQLite needs a WebAssembly build of it (sql.js) and modern packages a zstd decoder (fzstd); both load only when you import or export.
+
+> Importing a `.colpkg` **into Anki** replaces that Anki profile's whole collection - that is what the format is. To try an export in Anki safely, create a separate profile first (File → Switch Profile → Add).
+
+### Images and sync
+
+Images are stored once each, in their own IndexedDB store, named by a hash of their contents - not in the app state, which is mirrored to the browser's small localStorage and synced as one file. With sync on, images go to a separate secret gist, one file per image, and the data file carries an index of where each one is. A sync uploads only images the index does not have and downloads only images this device is missing, straight from the gist's raw URL. A downloaded image is checked against the hash in its name and discarded if it does not match. A card whose image has not arrived yet says so, and shows the image the moment it lands. Deleting a sync space deletes its image gists too.
 
 ## How weekly recalculation works
 
@@ -463,7 +501,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-168 tests across 15 files. The planning engine is pure, so the scenarios are exercised directly:
+414 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |
@@ -476,10 +514,14 @@ npm test
 | Tasks consistently finish early | Estimates decrease; freed time goes to high-value work | `estimation.test.ts`, `rebalance.test.ts` |
 | Repeated morning failures | Deep work moves to the stronger window | `patterns.test.ts` |
 | Work exceeds capacity | Target flagged, low-value work cut | `workload.test.ts`, `scenarios.test.ts` |
-| Mock percentile improves rapidly | Focus shifts to consistency and analysis | `readiness.test.ts` |
+| Mock marks climb steadily | Trend reads RISING; no fundamentals or coverage advice | `readiness.test.ts`, `scenarios.test.ts` |
 | **Week 1: 18h planned, 11h actual** | **Week 2 planned at ~11h, weakest sections weighted, buffer preserved** | `scenarios.test.ts`, `weeklyReview.test.ts` |
 
 `src/data/sync/__tests__/merge.test.ts` covers two-device merges: simultaneous edits, deletions, tombstone expiry, idempotence, symmetry (both devices converge on the same answer), and a brand-new device adopting existing data rather than duplicating it.
+
+`src/engine/forecast/__tests__/` is organised around the forecasting guide: data hygiene, the "flat", "blame QA" and "projected = current" bugs, the status thresholds, error-pattern mining, and the output's hard rules (no em dashes, never 0 for missing data, never the same advice twice).
+
+`src/flashcards/__tests__/` reproduces Anki's buttons for a new card, its review-card rules, fuzz bands and leech rule; the queue's daily limits and ordering; the card sanitiser against script, event-handler and remote-image attacks; and import and export against real `.colpkg` files made by Anki's own library, in both formats.
 
 `src/state/__tests__/store.test.ts` walks the same path the UI does — onboarding, completing and missing work, applying a decision, recording and analysing a mock, logging errors, running the review — and asserts on the resulting state.
 
@@ -496,6 +538,8 @@ Stated plainly, because the app's whole premise is not overstating what it knows
 - **No natural-language input yet.** Quick actions cover the common updates (low energy, unexpected commitment, travel, finished early, missed). Free-text parsing would sit behind an interface so an AI API could be added later — the core planner must keep working without one.
 - **Sync is eventually consistent, not real-time.** Changes propagate within seconds of an edit settling, or when you reopen the app — not instantly while both devices are open. Two devices editing *the same record* within the same few seconds resolve to the newer edit, so one of the two is discarded by design.
 - **Sync depends on GitHub being reachable.** Offline, the app is unaffected; it reconciles on the next connection.
+- **Flashcards cover what Anki's default setup does, not all of Anki.** New cards are Basic (no cloze editor or note-type designer here, though cloze and other note types import fine). FSRS, audio, image occlusion masks and add-on template filters are not supported; MathJax shows as its source text. Imported decks with the same name as an existing deck merge into it and keep the existing deck's options.
+- **Image sync has been tested against a simulated GitHub, not your account.** The data path it rides on is the one already in use; the image path is new.
 - **Notifications are preferences only.** There is no background scheduler; reminders surface in-app.
 - **Streaks are a consistency signal, not a goal.** The app deliberately does not gamify them: no badges, no celebration, no penalty copy. A broken streak is reported as information.
 - **Charts are hand-rolled SVG** to keep the bundle small: hover for values, but no zooming or panning.

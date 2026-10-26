@@ -7,6 +7,7 @@ export const ROUTES = [
   { key: 'today', label: 'Today', icon: 'today', primary: true, group: 'Plan' },
   { key: 'week', label: 'Week', icon: 'week', primary: true, group: 'Plan' },
   { key: 'log', label: 'Log', icon: 'log', primary: true, group: 'Plan' },
+  { key: 'flashcards', label: 'Flashcards', short: 'Cards', icon: 'cards', primary: true, group: 'Plan' },
   { key: 'cat', label: 'CAT readiness', icon: 'cat', primary: false, group: 'Performance' },
   { key: 'mocks', label: 'Mocks', icon: 'mocks', primary: false, group: 'Performance' },
   { key: 'errors', label: 'Errors', icon: 'errors', primary: false, group: 'Performance' },
@@ -129,7 +130,7 @@ export function Shell({
             <span className="glyph">
               <Icon name={r.icon as IconName} size={19} />
             </span>
-            {r.label}
+            {'short' in r ? r.short : r.label}
           </button>
         ))}
         <button type="button" aria-current={route === 'more' ? 'page' : undefined} onClick={() => navigate('more')}>

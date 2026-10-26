@@ -20,9 +20,11 @@ import {
   writeDataGist,
   type SpaceSummary,
   type SyncDevice,
+  type MediaSyncMeta,
   type SyncEnvelope,
 } from './gistClient';
 import { describeMerge, fingerprint, mergeStates } from './merge';
+import { deleteMediaGists, pullMedia, pushMedia } from './mediaSync';
 
 const CONFIG_KEY = 'cat-monitor:sync';
 
@@ -228,7 +230,10 @@ export async function forgetDevice(token: string, gistId: string, deviceId: stri
  * rather than left pointing at something that no longer exists.
  */
 export async function deleteSpace(token: string, gistId: string): Promise<{ disconnected: boolean }> {
+  // Its images go with it, rather than lingering as orphaned gists.
+  const envelope = await readDataGist(token, gistId).catch(() => null);
   await deleteDataGist(token, gistId);
+  await deleteMediaGists(token, envelope?.media);
   const config = loadSyncConfig();
   if (config && config.gistId === gistId) {
     clearSyncConfig();
@@ -249,6 +254,33 @@ export interface SyncOutcome {
   config: SyncConfig;
   devices: SyncEnvelope['devices'];
 }
+
+/**
+ * Image sync is best-effort: a failed upload or download must never stop the
+ * data itself from syncing. Whatever did not happen is retried next pass.
+ */
+async function pushImages(token: string, state: AppState, current: MediaSyncMeta | undefined): Promise<{ meta: MediaSyncMeta | undefined; uploaded: number }> {
+  try {
+    return await pushMedia(token, state, current);
+  } catch (err) {
+    console.warn('Image upload failed; it will be retried on the next sync', err);
+    return { meta: current, uploaded: 0 };
+  }
+}
+
+async function pullImages(state: AppState, meta: MediaSyncMeta | undefined): Promise<number> {
+  try {
+    return await pullMedia(state, meta);
+  } catch (err) {
+    console.warn('Image download failed; it will be retried on the next sync', err);
+    return 0;
+  }
+}
+
+const imageNote = (up: number, down: number) =>
+  [up ? `${up} image${up === 1 ? '' : 's'} uploaded` : '', down ? `${down} image${down === 1 ? '' : 's'} downloaded` : '']
+    .filter(Boolean)
+    .join(', ');
 
 /**
  * One reconciliation pass: pull, merge per record, push if anything differs.
@@ -274,6 +306,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
 
   // Nothing on GitHub yet: this device seeds it.
   if (!gistId) {
+    const images = await pushImages(config.token, local, undefined);
     const envelope: SyncEnvelope = {
       app: 'cat-monitor',
       envelopeVersion: 1,
@@ -282,6 +315,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
       updatedAt: now,
       devices: { [config.deviceId]: thisDevice },
       state: local,
+      media: images.meta,
     };
     const created = await createDataGist(config.token, envelope);
     const nextConfig = { ...config, gistId: created, lastSyncedAt: now };
@@ -299,6 +333,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
   const remote = await readDataGist(config.token, gistId);
 
   if (!remote) {
+    const images = await pushImages(config.token, local, undefined);
     const envelope: SyncEnvelope = {
       app: 'cat-monitor',
       envelopeVersion: 1,
@@ -307,6 +342,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
       updatedAt: now,
       devices: { [config.deviceId]: thisDevice },
       state: local,
+      media: images.meta,
     };
     await writeDataGist(config.token, gistId, envelope);
     const nextConfig = { ...config, gistId, lastSyncedAt: now };
@@ -327,8 +363,11 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
   const remoteIsStale = fingerprint(merged) !== fingerprint(remote.state);
   const devicesChanged = JSON.stringify(remote.devices?.[config.deviceId]) !== JSON.stringify(thisDevice);
 
+  // Images first, so the index of where they went lands in the same write.
+  const images = await pushImages(config.token, merged, remote.media);
+
   let pushed = false;
-  if (remoteIsStale || devicesChanged) {
+  if (remoteIsStale || devicesChanged || images.uploaded > 0) {
     await writeDataGist(config.token, gistId, {
       app: 'cat-monitor',
       envelopeVersion: 1,
@@ -337,9 +376,11 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
       updatedAt: now,
       devices,
       state: merged,
+      media: images.meta,
     });
     pushed = true;
   }
+  const downloaded = await pullImages(merged, images.meta);
 
   const nextConfig = {
     ...config,
@@ -354,7 +395,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
     state: merged,
     changedLocally: fingerprint(merged) !== fingerprint(local),
     pushed,
-    message: describeMerge(report),
+    message: [describeMerge(report), imageNote(images.uploaded, downloaded)].filter(Boolean).join(' · '),
     config: nextConfig,
     devices,
   };

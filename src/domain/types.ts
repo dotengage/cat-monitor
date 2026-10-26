@@ -597,6 +597,87 @@ export interface Settings extends Entity {
   autoBackup: boolean;
 }
 
+/* ------------------------------------------------------------------ */
+/* Flashcards                                                          */
+/* ------------------------------------------------------------------ */
+
+export type CardState = 'new' | 'learning' | 'review' | 'relearning';
+/** Again, Hard, Good, Easy - Anki's four buttons. */
+export type Rating = 1 | 2 | 3 | 4;
+
+/**
+ * Per-deck scheduling options. Defaults are Anki's own (see
+ * `DEFAULT_DECK_OPTIONS`), so a deck behaves the way an Anki user expects.
+ */
+export interface DeckOptions {
+  newPerDay: number;
+  reviewsPerDay: number;
+  /** Minutes. */
+  learnSteps: number[];
+  /** Minutes. */
+  relearnSteps: number[];
+  /** Days. */
+  graduatingInterval: number;
+  /** Days. */
+  easyInterval: number;
+  startingEase: number;
+  easyBonus: number;
+  hardInterval: number;
+  intervalModifier: number;
+  /** Multiplier applied to the interval on a lapse; 0 resets it. */
+  newInterval: number;
+  /** Days. */
+  minimumInterval: number;
+  /** Days. */
+  maximumInterval: number;
+  leechThreshold: number;
+}
+
+export interface Deck extends Entity {
+  name: string;
+  description: string;
+  options: DeckOptions;
+}
+
+export interface Flashcard extends Entity {
+  deckId: ID;
+  /** Sanitised HTML. Images reference the media store as `media:<id>`. */
+  front: string;
+  back: string;
+  tags: string[];
+  state: CardState;
+  suspended: boolean;
+  /** Index into the learning or relearning steps. */
+  step: number;
+  /** Review interval in days. While relearning, the interval it returns to. */
+  interval: number;
+  /** Ease factor, e.g. 2.5. Meaningless until the card first graduates. */
+  ease: number;
+  /** Epoch ms at which the card is next due. Unused while new. */
+  due: number;
+  /** Insertion order, which is the order new cards are introduced in. */
+  position: number;
+  reps: number;
+  lapses: number;
+  leech: boolean;
+}
+
+export interface CardReview extends Entity {
+  cardId: ID;
+  deckId: ID;
+  rating: Rating;
+  /** What the card was when it was answered. */
+  stateBefore: CardState;
+  /** Interval after answering: days, or negative minutes for a learning step (Anki's convention). */
+  interval: number;
+  lastInterval: number;
+  ease: number;
+  /** How long the answer took, ms. */
+  timeMs: number;
+  /** When it was answered, epoch ms. */
+  at: number;
+}
+
 export interface AppState {
   version: number;
   profile: UserProfile;
@@ -615,6 +696,9 @@ export interface AppState {
   capacityRecords: CapacityRecord[];
   habits: Habit[];
   habitDays: HabitDay[];
+  decks: Deck[];
+  flashcards: Flashcard[];
+  cardReviews: CardReview[];
   dismissedInsights: string[];
   /**
    * Tombstones: entity id -> ISO timestamp of deletion.

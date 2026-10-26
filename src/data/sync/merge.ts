@@ -30,6 +30,9 @@ const COLLECTIONS = [
   'capacityRecords',
   'habits',
   'habitDays',
+  'decks',
+  'flashcards',
+  'cardReviews',
 ] as const;
 
 type CollectionKey = (typeof COLLECTIONS)[number];

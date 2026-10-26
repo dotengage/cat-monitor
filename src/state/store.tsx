@@ -44,6 +44,7 @@ import { rebalanceWeek, type DecisionDraft } from '../engine/rebalance';
 import { generateWeeklyReview, assessCapacityReality } from '../engine/weeklyReview';
 import { calculateWeekCapacity } from '../engine/capacity';
 import { studyMinutesTotal } from '../engine/habits';
+import { flashcardReducer, isFlashcardAction, type FlashcardAction } from '../flashcards/reducer';
 import { useSync, type SyncApi } from './useSync';
 
 /* ------------------------------------------------------------------ */
@@ -96,7 +97,8 @@ export type Action =
   | { type: 'review/save'; weekStart: ISODate; today: ISODate; answers: ReviewAnswers }
   | { type: 'decision/add'; decision: DecisionDraft }
   | { type: 'insight/dismiss'; id: string }
-  | { type: 'rollover'; today: ISODate };
+  | { type: 'rollover'; today: ISODate }
+  | FlashcardAction;
 
 type BaseFields = { id: string; createdAt: string; updatedAt: string };
 
@@ -130,6 +132,7 @@ function pushDecision(state: AppState, draft: DecisionDraft): PlanningDecision[]
 /* ------------------------------------------------------------------ */
 
 export function reducer(state: AppState, action: Action): AppState {
+  if (isFlashcardAction(action)) return flashcardReducer(state, action);
   switch (action.type) {
     case 'hydrate':
     case 'replace':

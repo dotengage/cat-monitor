@@ -1,5 +1,6 @@
 import { DEFAULT_PLANNING, STATE_VERSION } from '../config/catConfig';
 import { isThemeName } from '../config/themes';
+import { DEFAULT_DECK_OPTIONS } from '../flashcards/scheduler';
 import type { AppState } from '../domain/types';
 import { createInitialState } from './defaultState';
 
@@ -39,6 +40,10 @@ export function migrate(raw: Partial<AppState>): AppState {
     capacityRecords: raw.capacityRecords ?? [],
     habits: raw.habits && raw.habits.length > 0 ? raw.habits : base.habits,
     habitDays: raw.habitDays ?? [],
+    // Added with flashcards; older data simply has none.
+    decks: (raw.decks ?? []).map((d) => ({ ...d, options: { ...DEFAULT_DECK_OPTIONS, ...(d.options ?? {}) } })),
+    flashcards: raw.flashcards ?? [],
+    cardReviews: raw.cardReviews ?? [],
     dismissedInsights: raw.dismissedInsights ?? [],
     deletedIds: raw.deletedIds ?? {},
   };

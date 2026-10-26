@@ -4,6 +4,7 @@ import { daysBetween } from './domain/date';
 import { Analytics } from './pages/Analytics';
 import { CAT } from './pages/CAT';
 import { Errors } from './pages/Errors';
+import { Flashcards } from './pages/Flashcards';
 import { Goals } from './pages/Goals';
 import { Home } from './pages/Home';
 import { Log } from './pages/Log';
@@ -96,6 +97,7 @@ function Router() {
       {route === 'today' && <Today navigate={navigate} />}
       {route === 'week' && <Week />}
       {route === 'log' && <Log />}
+      {route === 'flashcards' && <Flashcards />}
       {route === 'goals' && <Goals />}
       {route === 'cat' && <CAT />}
       {route === 'mocks' && <Mocks />}

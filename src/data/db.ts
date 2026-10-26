@@ -6,8 +6,10 @@
  */
 
 const DB_NAME = 'cat-monitor';
-const DB_VERSION = 1;
+/** v2 added the media store for flashcard images. */
+const DB_VERSION = 2;
 const STORE = 'kv';
+export const MEDIA_STORE = 'media';
 const LS_PREFIX = 'cat-monitor:';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -27,19 +29,32 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if (!db.objectStoreNames.contains(MEDIA_STORE)) db.createObjectStore(MEDIA_STORE);
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // Another tab opening a newer version must not be left blocked by this one.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('IndexedDB upgrade blocked'));
   });
   return dbPromise;
 }
 
-async function idbRequest<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+async function idbRequest<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest,
+  storeName: string = STORE,
+): Promise<T> {
   const db = await openDB();
   return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(STORE, mode);
-    const request = fn(tx.objectStore(STORE));
+    const tx = db.transaction(storeName, mode);
+    const request = fn(tx.objectStore(storeName));
     request.onsuccess = () => resolve(request.result as T);
     request.onerror = () => reject(request.error);
   });
@@ -159,5 +174,43 @@ export const kv = {
     } catch {
       return [];
     }
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/* Media                                                               */
+/* ------------------------------------------------------------------ */
+
+export interface MediaRecord {
+  id: string;
+  blob: Blob;
+  type: string;
+  size: number;
+  /** Original filename, kept so an Anki export can use the same name. */
+  name: string;
+  createdAt: string;
+}
+
+/**
+ * Binary store for flashcard images.
+ *
+ * Deliberately not part of the app state: state is mirrored to localStorage
+ * (about 5 MB) and synced as one JSON file, and neither should carry images.
+ * There is no localStorage fallback here for the same reason - an image that
+ * cannot be stored is reported, not silently squeezed somewhere it will not fit.
+ */
+export const mediaDb = {
+  async put(record: MediaRecord): Promise<void> {
+    await idbRequest('readwrite', (s) => s.put(record, record.id), MEDIA_STORE);
+  },
+  async get(id: string): Promise<MediaRecord | undefined> {
+    return idbRequest<MediaRecord | undefined>('readonly', (s) => s.get(id), MEDIA_STORE);
+  },
+  async keys(): Promise<string[]> {
+    const keys = await idbRequest<IDBValidKey[]>('readonly', (s) => s.getAllKeys(), MEDIA_STORE);
+    return keys.map(String);
+  },
+  async delete(id: string): Promise<void> {
+    await idbRequest('readwrite', (s) => s.delete(id), MEDIA_STORE);
   },
 };

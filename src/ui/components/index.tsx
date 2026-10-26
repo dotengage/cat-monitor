@@ -253,15 +253,23 @@ export function Modal({
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Initial focus happens once. Tying it to `onClose` re-ran it whenever the
+  // parent re-rendered, which pulled the caret out of whatever you were typing in.
+  useEffect(() => {
+    const target =
+      ref.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+      ref.current?.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea, button');
+    target?.focus();
     // Stop the page scrolling underneath the sheet.
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose]);
+  }, []);
 
   /*
    * Rendered into <body> rather than in place.

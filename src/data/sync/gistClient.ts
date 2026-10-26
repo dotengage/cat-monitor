@@ -41,6 +41,17 @@ export interface SyncEnvelope {
   updatedAt: string;
   devices: Record<string, SyncDevice>;
   state: AppState;
+  /** Where flashcard images live; see `mediaSync.ts`. */
+  media?: MediaSyncMeta;
+}
+
+export interface MediaSyncMeta {
+  /** GitHub login that owns the gists, needed to build raw download URLs. */
+  owner?: string;
+  /** Gists holding images, oldest first. */
+  gists: string[];
+  /** Image id to the gist that holds it. */
+  index: Record<string, string>;
 }
 
 /** Enough about a space to decide whether it is yours before joining it. */
@@ -57,7 +68,7 @@ export interface SpaceSummary {
   unreadable?: boolean;
 }
 
-async function request<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API}${path}`, {
@@ -97,8 +108,9 @@ interface GistFile {
   raw_url?: string;
 }
 
-interface GistPayload {
+export interface GistPayload {
   id: string;
+  owner?: { login: string };
   description: string;
   updated_at: string;
   files: Record<string, GistFile>;

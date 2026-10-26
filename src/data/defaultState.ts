@@ -142,6 +142,9 @@ export function createInitialState(start = todayISO()): AppState {
     capacityRecords: [],
     habits: createHabits(),
     habitDays: [],
+    decks: [],
+    flashcards: [],
+    cardReviews: [],
     dismissedInsights: [],
     deletedIds: {},
   };

@@ -1,0 +1,14 @@
+{
+ "cards": 7,
+ "notes": 5,
+ "revlog": 4,
+ "suspended": 1,
+ "review_cards": 1,
+ "decks": [
+  "Default",
+  "Parent",
+  "Parent::Child",
+  "QA Hacks"
+ ],
+ "media": "paste-test-image.png"
+}
