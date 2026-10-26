@@ -76,10 +76,11 @@ describe('calculateFeasibility', () => {
 
   it('downgrades an on-track trajectory when the workload cannot fit', () => {
     const state = makeState({
+      // Marks and percentiles that agree, so marks can be converted at all.
       mocks: [
-        makeMock({ date: '2026-08-10', overallPercentile: 90 }),
-        makeMock({ date: '2026-08-17', overallPercentile: 94 }),
-        makeMock({ date: '2026-08-24', overallPercentile: 97 }),
+        makeMock({ date: '2026-08-10', overallScore: 88, overallPercentile: 90 }),
+        makeMock({ date: '2026-08-17', overallScore: 94, overallPercentile: 94 }),
+        makeMock({ date: '2026-08-24', overallScore: 101, overallPercentile: 97 }),
       ],
     });
     state.profile.weekdayHours = { min: 0.25, normal: 0.5, max: 1 };
@@ -90,13 +91,15 @@ describe('calculateFeasibility', () => {
     expect(feasibility.reason).toMatch(/does not fit the remaining capacity|exceeds realistic capacity/);
   });
 
-  it('lists the evidence it used without inventing a probability', () => {
+  it('lists the evidence it used, and keeps any chance out of the headline', () => {
     const feasibility = calculateFeasibility(makeState({ mocks: [makeMock()] }), TODAY);
     const labels = feasibility.inputs.map((i) => i.label);
 
     expect(labels).toContain('Days remaining');
-    expect(labels).toContain('Mocks recorded');
+    expect(labels).toContain('Full mocks with marks');
+    expect(labels).toContain('Binding constraint');
     expect(labels).toContain('Workload health');
+    // A chance belongs next to the band it came from, never in a one-line verdict.
     expect(feasibility.headline).not.toMatch(/%/);
   });
 

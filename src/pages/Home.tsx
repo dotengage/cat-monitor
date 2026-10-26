@@ -1,6 +1,5 @@
 import { SECTION_LABELS } from '../config/catConfig';
 import { daysBetween, formatHours, formatLongDate } from '../domain/date';
-import { weaknessIsMeaningful } from '../engine/derive';
 import { calculateHabitStats } from '../engine/habits';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
@@ -27,10 +26,12 @@ import type { RouteKey } from '../ui/layout/Shell';
  * widest boxes at the top, the inputs that feed them sit beside and below,
  * and each box is a shortcut into the page that owns that subject.
  */
+const chance = (p: number) => (p < 0.01 ? 'under 1%' : p > 0.99 ? 'over 99%' : `about ${Math.round(p * 100)}%`);
+
 export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
   const { state, today, weekStart } = useStore();
   const engine = useEngine();
-  const { feasibility, workload, todayPlan, capacityWeek, insights, conflicts, monthly, readiness } = engine;
+  const { feasibility, workload, todayPlan, capacityWeek, insights, conflicts, monthly, forecast } = engine;
 
   const daysRemaining = Math.max(0, daysBetween(today, state.profile.examDate));
   const week = state.weeks.find((w) => w.startDate === weekStart);
@@ -42,13 +43,16 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
   const needsDecision = state.tasks.filter((t) => t.needsDecision && t.status === 'missed');
 
   const habits = calculateHabitStats(state, today);
+  const constraintSection = forecast.constraint.top[0]?.section;
+  const constraintTask = constraintSection
+    ? [...todayPlan.mustDo, ...todayPlan.shouldDo].find((t) => t.section === constraintSection)
+    : undefined;
   const focus = [...todayPlan.mustDo, ...todayPlan.shouldDo].slice(0, 3);
   const biggestRisk =
     conflicts.find((c) => c.severity === 'critical') ??
     conflicts.find((c) => c.severity === 'warn') ??
     null;
 
-  const trajectory = readiness.trajectory;
   const weekDone = weekTasks.filter((t) => t.status === 'done').length;
   const weekPlanned = weekTasks.filter((t) => t.status !== 'missed').length;
 
@@ -104,9 +108,12 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
           <div className="next-action">
             <div className="section-label">Next action</div>
             <p>{feasibility.nextAction}</p>
-            {focus[0] && (
+            {/* Only pair the advice with a task that actually serves it. The planner
+                allocates by its own weighting, so today's first task is not
+                necessarily about the binding constraint. */}
+            {constraintTask && (
               <p className="small muted">
-                Today, that means: <strong>{focus[0].title}</strong>
+                Today, that means: <strong>{constraintTask.title}</strong>
               </p>
             )}
           </div>
@@ -125,48 +132,58 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
               </table>
             </div>
             <p className="tiny faint" style={{ marginTop: 8 }}>
-              No probability is shown here on purpose. There is no honest way to turn this evidence into a percentage.
+              Any chance shown is the share of 10,000 simulated papers, resampled from your own recent mocks, that
+              reach the target. It is only as good as those mocks, and it says so when there are too few.
             </p>
           </Collapse>
         </Card>
 
-        {/* Where the measured evidence currently puts the target. */}
-        <Card title="Target percentile" onOpen={() => navigate('cat')} openLabel="Readiness">
-          {trajectory.current === undefined ? (
-            <Empty>
-              No mock scored yet, so there is nothing to plot against {state.profile.targetPercentile}. A baseline mock
-              is the fastest way to make this page mean something.
-            </Empty>
+        {/* Where the evidence puts exam day: a band, never a single number. */}
+        <Card title="Exam-day forecast" onOpen={() => navigate('cat')} openLabel="Readiness">
+          {!forecast.forecast?.percentile ? (
+            <Empty>{forecast.statusRule.replace(/^No status: /, '')}</Empty>
           ) : (
             <>
               <div className="goal-line">
-                <div className="goal-value mono">{Math.round(trajectory.current)}</div>
-                <StatusPill status={trajectory.status} />
+                <div>
+                  <div className="goal-value mono">{Math.round(forecast.forecast.percentile.p50)}</div>
+                  <div className="tiny muted">likely percentile</div>
+                </div>
+                <StatusPill status={forecast.status} />
               </div>
               <Progress
-                value={trajectory.current}
-                max={trajectory.target}
-                tone={trajectory.status === 'BEHIND' ? 'risk' : trajectory.status === 'AT_RISK' ? 'warn' : 'ok'}
+                value={forecast.forecast.percentile.p50}
+                max={forecast.target}
+                tone={
+                  forecast.status === 'OFF_TRACK'
+                    ? 'risk'
+                    : forecast.status === 'AT_RISK' || forecast.status === 'STRETCH'
+                      ? 'warn'
+                      : 'ok'
+                }
               />
               <div className="goal-foot tiny muted">
                 <span>
-                  {Math.round(trajectory.current)} / {trajectory.target} percentile
+                  Range {Math.round(forecast.forecast.percentile.p10)} to {Math.round(forecast.forecast.percentile.p90)}
+                  {forecast.forecast.indicative ? ' (indicative)' : ''}
                 </span>
                 <span>{daysRemaining}d left</span>
               </div>
               <p className="tiny muted" style={{ marginTop: 10 }}>
-                {trajectory.projected !== undefined
-                  ? `At the current rate this lands near ${Math.round(trajectory.projected)} on exam day.`
-                  : trajectory.reason}
+                Chance of reaching {forecast.target}: <strong>{chance(forecast.forecast.probability ?? 0)}</strong>
+                {forecast.highVariance ? '. High variance between papers.' : '.'}
               </p>
             </>
           )}
           <div className="mini-stats">
             <div>
-              <span className="mono">{readiness.mocksCompleted}</span> mocks
+              <span className="mono">{forecast.n}</span> mocks with marks
             </div>
             <div>
-              <span className="mono">{readiness.mocksAnalysed}</span> analysed
+              <span className="mono">{forecast.analysedMocks}</span> analysed
+            </div>
+            <div>
+              trend <span className="mono">{forecast.trend.label.toLowerCase()}</span>
             </div>
           </div>
         </Card>
@@ -260,10 +277,13 @@ export function Home({ navigate }: { navigate: (r: RouteKey) => void }) {
                 {biggestRisk.suggestion}
               </div>
             </Callout>
-          ) : engine.readiness.constraint && weaknessIsMeaningful(state, today) ? (
+          ) : forecast.constraint.established && forecast.constraint.top[0] ? (
             <Callout>
-              {SECTION_LABELS[engine.readiness.constraint]} is currently the weakest section and the most likely
-              constraint on {state.profile.targetPercentile} percentile.
+              <strong>{SECTION_LABELS[forecast.constraint.top[0].section]}</strong> is the binding constraint, a{' '}
+              {forecast.constraint.top[0].kind === 'CONSISTENCY' ? 'consistency' : 'capability'} gap.
+              <div className="small" style={{ marginTop: 4 }}>
+                {forecast.constraint.top[0].why}
+              </div>
             </Callout>
           ) : state.mocks.length === 0 ? (
             <Callout tone="warn">

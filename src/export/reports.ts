@@ -5,26 +5,188 @@
  * engine, so the contents of a report can be asserted in tests rather than
  * eyeballed in a PDF viewer.
  */
-import { ERROR_TYPE_LABELS, SECTIONS, SECTION_FULL_NAMES, SECTION_LABELS } from '../config/catConfig';
+import { ERROR_TYPE_LABELS, SECTIONS, SECTION_LABELS } from '../config/catConfig';
 import { addDays, formatDate, formatHours, formatLongDate } from '../domain/date';
 import type { AppState, ErrorType, ISODate, SectionKey } from '../domain/types';
-import {
-  errorCountsByType,
-  fullMocks,
-  overallPercentileHistory,
-  sectionPercentileHistory,
-  sectionStats,
-  sortedMocks,
-  topicStats,
-} from '../engine/derive';
+import { errorCountsByType, fullMocks, overallPercentileHistory, sectionStats, sortedMocks, topicStats } from '../engine/derive';
 import { buildEstimationModel } from '../engine/estimation';
 import { calculateHabitStats, studyLogRows, studyTotals } from '../engine/habits';
-import { calculateCATReadiness } from '../engine/readiness';
+import { calculateForecast, describeContradiction, formatBand, PATTERN_LABELS, type Forecast } from '../engine/forecast';
 import { calculateFeasibility } from '../engine/workload';
 import { PdfDoc } from './pdf';
 
 function stamp(state: AppState, today: ISODate): string {
   return `${state.profile.targetPercentile}+ percentile target  -  exam ${formatLongDate(state.profile.examDate)}  -  generated ${formatDate(today, { withYear: true })}`;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Forecast blocks, in the guide's output order                        */
+/* ------------------------------------------------------------------ */
+
+const r1 = (n: number) => String(Math.round(n * 10) / 10);
+const r0 = (n: number) => String(Math.round(n));
+const NR = 'not recorded';
+const chance = (p: number) => (p < 0.01 ? 'under 1%' : p > 0.99 ? 'over 99%' : `${Math.round(p * 100)}%`);
+const statusText = (f: Forecast) =>
+  f.status === 'UNCONFIRMED' ? 'UNCONFIRMED' : `${f.status.replace('_', ' ')}${f.highVariance ? ' + HIGH VARIANCE' : ''}`;
+
+/** Block 1 only: the short version used where the full analysis would be repetition. */
+function writeHeadline(doc: PdfDoc, f: Forecast) {
+  const p = f.forecast?.percentile;
+  doc.stats([
+    {
+      label: 'Current level',
+      value: f.level ? (f.level.percentile !== undefined ? r1(f.level.percentile) : `${r0(f.level.marks)} marks`) : NR,
+    },
+    { label: 'Likely exam day', value: p ? r1(p.p50) : NR },
+    { label: 'Range (P10-P90)', value: p ? `${r1(p.p10)} to ${r1(p.p90)}` : NR },
+    { label: `Chance of ${f.target}`, value: f.forecast?.probability !== undefined ? chance(f.forecast.probability) : NR },
+    { label: 'Status', value: statusText(f) },
+    { label: 'Evidence', value: `${f.n} mocks, ${f.confidence}` },
+  ]);
+  for (const line of f.headline) doc.paragraph(line, { size: 9 });
+  doc.paragraph(`Next: ${f.recommendedAction}`);
+}
+
+function writeForecastBlocks(doc: PdfDoc, f: Forecast) {
+  /* 1. Headline */
+  doc.heading('1. Headline');
+  writeHeadline(doc, f);
+
+  /* 2. What changed */
+  doc.heading('2. What changed');
+  doc.bullets(f.whatChanged.length > 0 ? f.whatChanged : ['First report: nothing to compare against.']);
+
+  /* 3. Trend */
+  doc.heading('3. Trend');
+  doc.paragraph(f.trend.summary);
+  const marked = f.history.filter((h) => h.marks !== undefined);
+  if (marked.length > 0) {
+    doc.lineChart(
+      marked.map((h) => ({ label: formatDate(h.date), value: h.marks as number })),
+      f.curve?.targetMarks !== undefined ? Math.round(f.curve.targetMarks) : undefined,
+    );
+  }
+  if (f.curve) {
+    doc.paragraph(
+      `One more percentile point near ${f.target} costs about ${r1(f.curve.marksPerPointAtTarget ?? 0)} marks at your level` +
+        (f.curve.targetMarks !== undefined ? `; ${f.target} percentile needs roughly ${r0(f.curve.targetMarks)} marks.` : '.') +
+        (f.curve.provisional ? ` Mapping provisional (${f.curve.pairs} pairs; a fitted curve needs 5).` : ''),
+      { muted: true, size: 9 },
+    );
+  }
+
+  /* 4. Binding constraint */
+  doc.heading('4. Binding constraint');
+  if (!f.constraint.established) {
+    doc.paragraph(f.constraint.note, { muted: true });
+  } else {
+    doc.table(
+      [
+        { header: 'Section', width: 13 },
+        { header: 'Var. share', width: 13, align: 'right' },
+        { header: 'Ceiling gap', width: 13, align: 'right' },
+        { header: 'Floor loss', width: 13, align: 'right' },
+        { header: 'Pts/mark', width: 12, align: 'right' },
+        { header: 'Gap', width: 36 },
+      ],
+      f.constraint.top.map((d) => [
+        SECTION_LABELS[d.section],
+        `${Math.round(d.varianceShare * 100)}%`,
+        r1(d.ceilingGap),
+        `${r1(d.floorLoss)} (${Math.round(d.floorShare * 100)}%)`,
+        d.marginalValue !== undefined ? r1(d.marginalValue) : NR,
+        `${d.kind}. ${d.why}`,
+      ]),
+    );
+    doc.paragraph(f.constraint.note, { muted: true, size: 9 });
+  }
+
+  /* 5. Clean paper rate */
+  doc.heading('5. Clean paper rate');
+  if (!f.cleanPaper) {
+    doc.paragraph('Needs full mocks with marks for all three sections.', { muted: true });
+  } else {
+    const c = f.cleanPaper;
+    doc.paragraph(
+      `${c.count} of ${c.n} full mocks (${Math.round(c.rate * 100)}%) had every section above the floor.` +
+        (c.combinedBestMarks !== undefined
+          ? ` Section bests together: ${r0(c.combinedBestMarks)} marks${c.combinedBestPercentile !== undefined ? `, about ${r1(c.combinedBestPercentile)} percentile` : ''}.`
+          : '') +
+        (c.consistencyHeadline ? ' The target is inside your demonstrated range: the headline finding is consistency.' : ''),
+    );
+    doc.paragraph(c.rule, { muted: true, size: 9 });
+  }
+
+  /* 6. Forecast table */
+  doc.heading('6. Forecast');
+  if (f.scenarios.length === 0) {
+    doc.paragraph('No forecast: no full mock with marks yet.', { muted: true });
+  } else {
+    doc.table(
+      [
+        { header: 'Scenario', width: 14 },
+        { header: 'Percentile', width: 13, align: 'right' },
+        { header: 'Marks', width: 10, align: 'right' },
+        { header: 'Chance', width: 21 },
+        { header: 'What has to hold', width: 42 },
+      ],
+      f.scenarios.map((sc) => [
+        sc.label,
+        sc.percentile !== undefined ? r1(sc.percentile) : NR,
+        r0(sc.marks),
+        sc.chance,
+        sc.conditions.join(' '),
+      ]),
+    );
+    if (f.forecast) doc.bullets(f.forecast.notes);
+  }
+
+  /* 7. Section cards */
+  doc.heading('7. Sections');
+  for (const card of f.sections) {
+    const level = card.level;
+    doc.keyValues([
+      [
+        SECTION_LABELS[card.section],
+        `${card.status.replace('_', ' ')}${level ? `, level ${level.percentile !== undefined ? `${r1(level.percentile)} pctl` : `${r0(level.marks)} marks`}` : ''}`,
+      ],
+      ['Latest / average of last 5', `${card.latestPercentile ?? NR} / ${card.recentAveragePercentile ?? NR}`],
+      ['Trend', card.trend.label === 'INSUFFICIENT' ? 'not established' : card.trend.label.toLowerCase()],
+      ['Target attempts', card.attempts.band ? formatBand(card.attempts.band) : NR],
+      ['Accuracy floor', card.attempts.accuracyFloor !== undefined ? `${card.attempts.accuracyFloor}%` : NR],
+      ...(card.dilr
+        ? ([['DILR sets', `${Math.round(card.dilr.conversion * 100)}% converted; expected ${card.dilr.expected.map((e) => r0(e)).join('/')} marks at 0/1/2/3 solved`]] as [string, string][])
+        : []),
+    ]);
+    doc.paragraph(`Action: ${card.action}`, { size: 9 });
+    doc.paragraph(`${card.statusRule} ${card.sectional.verdict}`, { muted: true, size: 8 });
+  }
+
+  /* 8. Error patterns */
+  doc.heading('8. Error patterns');
+  if (f.patterns.patterns.length === 0) {
+    doc.paragraph(
+      f.patterns.mocksWithNotes === 0 ? 'No analysis notes recorded yet.' : 'No recurring patterns found in the notes.',
+      { muted: true },
+    );
+  } else {
+    doc.table(
+      [
+        { header: 'Pattern', width: 40 },
+        { header: 'Mocks', width: 15, align: 'right' },
+        { header: 'Trend', width: 22 },
+        { header: 'Last seen', width: 23 },
+      ],
+      f.patterns.patterns.map((pt) => [PATTERN_LABELS[pt.tag], String(pt.frequency), pt.trend.toLowerCase(), formatDate(pt.lastSeen, { withYear: true })]),
+    );
+  }
+  for (const c of f.patterns.contradictions) doc.paragraph(`Possible contradiction: ${describeContradiction(c)}`, { size: 9 });
+
+  /* 9. Data quality */
+  doc.heading('9. Data quality');
+  doc.bullets(f.dataQuality);
 }
 
 /* ------------------------------------------------------------------ */
@@ -33,73 +195,25 @@ function stamp(state: AppState, today: ISODate): string {
 
 export function buildMockReport(state: AppState, today: ISODate): PdfDoc {
   const doc = new PdfDoc('CAT Monitor - Mock report');
-  const readiness = calculateCATReadiness(state, today);
-  const trajectory = readiness.trajectory;
+  const forecast = calculateForecast(state, today);
   const mocks = sortedMocks(state);
   const full = fullMocks(state);
-  const percentiles = full.map((m) => m.overallPercentile).filter((p): p is number => typeof p === 'number');
 
   doc.title('Mock report', stamp(state, today));
 
-  /* ---- Summary ---- */
   doc.stats([
-    { label: 'Mocks taken', value: String(full.length) },
+    { label: 'Full mocks', value: String(full.length) },
     { label: 'Analysed', value: `${full.filter((m) => m.analysed).length} of ${full.length}` },
     { label: 'Sectionals', value: String(mocks.filter((m) => m.kind === 'sectional').length) },
-    { label: 'Latest percentile', value: percentiles.length ? String(percentiles[percentiles.length - 1]) : 'n/a' },
-    { label: 'Best percentile', value: percentiles.length ? String(Math.max(...percentiles)) : 'n/a' },
+    { label: 'Latest percentile', value: forecast.latestPercentile !== undefined ? String(forecast.latestPercentile) : NR },
+    { label: 'Best percentile', value: forecast.bestPercentile !== undefined ? String(forecast.bestPercentile) : NR },
     {
-      label: 'Average',
-      value: percentiles.length ? (percentiles.reduce((a, v) => a + v, 0) / percentiles.length).toFixed(1) : 'n/a',
+      label: 'Average (last 5)',
+      value: forecast.recentAveragePercentile !== undefined ? `${forecast.recentAveragePercentile} (${forecast.recentAverageCount})` : NR,
     },
   ]);
 
-  /* ---- Trajectory ---- */
-  doc.heading('Trajectory');
-  doc.keyValues([
-    ['Status', trajectory.status.replace('_', ' ')],
-    ['Evidence confidence', trajectory.confidence],
-    ['Current', trajectory.current === undefined ? 'no data' : String(trajectory.current)],
-    ['Projected', trajectory.projected === undefined ? 'needs 2+ mocks' : String(trajectory.projected)],
-    ['Trend', trajectory.trend.toLowerCase()],
-    ['Main constraint', trajectory.constraint ? SECTION_FULL_NAMES[trajectory.constraint] : 'not established'],
-    ['Days remaining', String(trajectory.daysRemaining)],
-  ]);
-  doc.paragraph(trajectory.reason, { muted: true });
-  doc.paragraph(`Recommended: ${trajectory.recommendedAction}`);
-
-  const history = overallPercentileHistory(state);
-  if (history.length > 0) {
-    doc.heading('Overall percentile over time');
-    doc.lineChart(
-      history.map((h) => ({ label: formatDate(h.date), value: h.percentile })),
-      state.profile.targetPercentile,
-    );
-  }
-
-  /* ---- Section readiness ---- */
-  doc.heading('Section readiness');
-  doc.table(
-    [
-      { header: 'Section', width: 26 },
-      { header: 'Status', width: 22 },
-      { header: 'Latest', width: 13, align: 'right' },
-      { header: 'Readiness', width: 15, align: 'right' },
-      { header: 'Accuracy', width: 13, align: 'right' },
-      { header: 'Coverage', width: 13, align: 'right' },
-    ],
-    readiness.sections.map((s) => [
-      SECTION_LABELS[s.section],
-      s.status.replace('_', ' '),
-      s.latestPercentile === undefined ? '-' : String(s.latestPercentile),
-      `${s.readiness}/100`,
-      s.accuracy === undefined ? '-' : `${Math.round(s.accuracy * 100)}%`,
-      `${Math.round(s.coverage * 100)}%`,
-    ]),
-  );
-  for (const s of readiness.sections) {
-    doc.paragraph(`${SECTION_LABELS[s.section]}: ${s.nextAction}`, { size: 9 });
-  }
+  writeForecastBlocks(doc, forecast);
 
   /* ---- Every mock ---- */
   doc.pageBreak();
@@ -117,16 +231,24 @@ export function buildMockReport(state: AppState, today: ISODate): PdfDoc {
       ['Analysis', mock.analysed ? 'complete' : 'INCOMPLETE'],
       ...(mock.kind === 'full'
         ? ([
-            ['Overall score', mock.overallScore === undefined ? '-' : String(mock.overallScore)],
-            ['Overall percentile', mock.overallPercentile === undefined ? '-' : String(mock.overallPercentile)],
+            ['Overall score', mock.overallScore === undefined ? NR : String(mock.overallScore)],
+            ['Overall percentile', mock.overallPercentile ? String(mock.overallPercentile) : NR],
           ] as [string, string][])
         : []),
     ]);
 
     const rows = SECTIONS.filter((s) => mock.sections[s]).map((s) => {
       const sec = mock.sections[s]!;
-      const acc = sec.attempts > 0 ? `${Math.round((sec.correct / sec.attempts) * 100)}%` : '-';
-      return [SECTION_LABELS[s], String(sec.score), String(sec.percentile), String(sec.attempts), String(sec.correct), acc];
+      const recorded = sec.attempts > 0;
+      const acc = recorded ? `${Math.round((sec.correct / sec.attempts) * 100)}%` : NR;
+      return [
+        SECTION_LABELS[s],
+        String(sec.score),
+        sec.percentile > 0 ? String(sec.percentile) : NR,
+        recorded ? String(sec.attempts) : NR,
+        recorded ? String(sec.correct) : NR,
+        acc,
+      ];
     });
     if (rows.length > 0) {
       doc.table(
@@ -151,7 +273,7 @@ export function buildMockReport(state: AppState, today: ISODate): PdfDoc {
     const lessons = mock.lessons.filter(Boolean);
     if (lessons.length > 0) doc.bullets(lessons);
     if (!mock.analysed) {
-      doc.paragraph('This mock has not been analysed, so its percentile carries less weight in the trajectory.', {
+      doc.paragraph('This mock is unanalysed: its notes are missing from the error-pattern analysis.', {
         muted: true,
         size: 9,
       });
@@ -240,34 +362,54 @@ export function buildAnalyticsReport(state: AppState, today: ISODate): PdfDoc {
     );
   }
 
+  /* ---- Forecast ---- */
+  const forecast = calculateForecast(state, today);
+  doc.heading('Exam-day forecast');
+  writeHeadline(doc, forecast);
+  if (forecast.scenarios.length > 0) {
+    doc.table(
+      [
+        { header: 'Scenario', width: 16 },
+        { header: 'Percentile', width: 16, align: 'right' },
+        { header: 'Marks', width: 12, align: 'right' },
+        { header: 'Chance', width: 56 },
+      ],
+      forecast.scenarios.map((sc) => [sc.label, sc.percentile !== undefined ? r1(sc.percentile) : NR, r0(sc.marks), sc.chance]),
+    );
+  }
+  doc.paragraph('The full analysis, block by block, is in the mock report.', { muted: true, size: 9 });
+
   /* ---- Mock trends ---- */
   const history = overallPercentileHistory(state);
   if (history.length > 0) {
-    doc.heading('Mock percentile over time');
+    doc.heading('Recorded overall percentile');
     doc.lineChart(
       history.map((h) => ({ label: formatDate(h.date), value: h.percentile })),
       state.profile.targetPercentile,
     );
-
-    doc.heading('Sectional percentiles');
-    doc.table(
-      [
-        { header: 'Section', width: 30 },
-        { header: 'First', width: 18, align: 'right' },
-        { header: 'Latest', width: 18, align: 'right' },
-        { header: 'Change', width: 18, align: 'right' },
-        { header: 'Points', width: 16, align: 'right' },
-      ],
-      SECTIONS.map((s) => {
-        const pts = sectionPercentileHistory(state, s);
-        if (pts.length === 0) return [SECTION_LABELS[s], '-', '-', '-', '0'];
-        const first = pts[0].percentile;
-        const last = pts[pts.length - 1].percentile;
-        const delta = Math.round((last - first) * 10) / 10;
-        return [SECTION_LABELS[s], String(first), String(last), `${delta >= 0 ? '+' : ''}${delta}`, String(pts.length)];
-      }),
-    );
   }
+
+  // Not first-to-latest change: two points say nothing about direction. The
+  // trend is the marks regression with its interval, from the forecast.
+  doc.heading('Sections');
+  doc.table(
+    [
+      { header: 'Section', width: 16 },
+      { header: 'Latest', width: 15, align: 'right' },
+      { header: 'Avg last 5', width: 17, align: 'right' },
+      { header: 'Trend (marks)', width: 20 },
+      { header: 'Status', width: 18 },
+      { header: 'Mocks', width: 14, align: 'right' },
+    ],
+    forecast.sections.map((c) => [
+      SECTION_LABELS[c.section],
+      c.latestPercentile !== undefined ? String(c.latestPercentile) : NR,
+      c.recentAveragePercentile !== undefined ? String(c.recentAveragePercentile) : NR,
+      c.trend.label === 'INSUFFICIENT' ? 'not established' : c.trend.label.toLowerCase(),
+      c.status.replace('_', ' ').toLowerCase(),
+      String(c.trend.n),
+    ]),
+  );
 
   /* ---- Study volume ---- */
   doc.pageBreak();

@@ -48,11 +48,14 @@ export type EnergyLevel = 1 | 2 | 3 | 4 | 5;
 export type EnergyMode = 'HIGH' | 'NORMAL' | 'LOW' | 'VERY_LOW';
 
 /** Qualitative status. `UNCONFIRMED` means "not enough evidence yet". */
-export type TrackStatus = 'ON_TRACK' | 'AT_RISK' | 'BEHIND' | 'UNCONFIRMED';
+/**
+ * ON_TRACK / STRETCH / AT_RISK / OFF_TRACK are the forecast's rule-based
+ * labels (gap of target minus likely percentile: at most 1, 4, 8, or more).
+ * BEHIND belongs to goal progress, which is measured differently.
+ */
+export type TrackStatus = 'ON_TRACK' | 'STRETCH' | 'AT_RISK' | 'OFF_TRACK' | 'BEHIND' | 'UNCONFIRMED';
 
 export type WorkloadHealth = 'COMFORTABLE' | 'TIGHT' | 'AT_RISK' | 'UNSUSTAINABLE';
-
-export type Trend = 'IMPROVING' | 'FLAT' | 'DECLINING' | 'VOLATILE' | 'UNKNOWN';
 
 export type TimeWindow = 'early-morning' | 'morning' | 'afternoon' | 'evening' | 'night';
 
@@ -480,35 +483,7 @@ export interface TaskPriority {
   components: PriorityComponents;
 }
 
-export interface SectionReadiness {
-  section: SectionKey;
-  status: TrackStatus;
-  readiness: number;
-  latestPercentile?: number;
-  trend: Trend;
-  accuracy?: number;
-  coverage: number;
-  weakTopics: { topicId: ID; name: string; accuracy: number }[];
-  errorRecurrence: number;
-  nextAction: string;
-  reason: string;
-}
 
-export interface Trajectory {
-  status: TrackStatus;
-  confidence: 'none' | 'low' | 'medium' | 'high';
-  current?: number;
-  target: number;
-  projected?: number;
-  trend: Trend;
-  slopePerWeek?: number;
-  daysRemaining: number;
-  requiredImprovement?: number;
-  constraint?: SectionKey;
-  reason: string;
-  recommendedAction: string;
-  history: { date: ISODate; percentile: number }[];
-}
 
 export interface Conflict {
   id: string;

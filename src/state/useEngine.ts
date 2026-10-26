@@ -6,7 +6,8 @@ import { generateInsights } from '../engine/insights';
 import { buildMonthlyStrategy } from '../engine/monthly';
 import { detectBehaviourPatterns } from '../engine/patterns';
 import { buildTodayPlan } from '../engine/priority';
-import { calculateCATReadiness, recommendedMockCadence } from '../engine/readiness';
+import { calculateForecast } from '../engine/forecast';
+import { recommendedMockCadence } from '../engine/readiness';
 import { calculateFeasibility } from '../engine/workload';
 import { useStore } from './store';
 
@@ -22,7 +23,7 @@ export function useEngine() {
     const capacityWeek = calculateWeekCapacity(state, weekStart, today);
     const todayCapacity = calculateCapacity(state, today, { today });
     const feasibility = calculateFeasibility(state, today);
-    const readiness = calculateCATReadiness(state, today);
+    const forecast = calculateForecast(state, today);
     const todayPlan = buildTodayPlan(state, today, todayCapacity.plannedMin);
     const conflicts = detectConflicts(state, weekStart, today);
     const insights = generateInsights(state, today, weekStart);
@@ -35,7 +36,7 @@ export function useEngine() {
       capacityWeek,
       todayCapacity,
       feasibility,
-      readiness,
+      forecast,
       todayPlan,
       conflicts,
       insights,
@@ -44,7 +45,6 @@ export function useEngine() {
       monthly,
       cadence,
       workload: feasibility.workload,
-      trajectory: readiness.trajectory,
     };
   }, [state, today, weekStart]);
 }

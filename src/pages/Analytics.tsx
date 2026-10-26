@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { ERROR_TYPE_LABELS, SECTIONS, SECTION_LABELS, TASK_TYPE_LABELS } from '../config/catConfig';
 import { addDays, formatDate, formatHours, startOfWeek } from '../domain/date';
 import type { ErrorType, TaskType } from '../domain/types';
-import { errorCountsByType, overallPercentileHistory, topicStats } from '../engine/derive';
+import { errorCountsByType, fullMocks, overallPercentileHistory, topicStats } from '../engine/derive';
 import { buildEstimationModel } from '../engine/estimation';
 import { useStore } from '../state/store';
 import { BarPairChart, ChartLegend, HBarList, TrendChart } from '../ui/charts';
@@ -129,17 +129,20 @@ export function Analytics() {
         )}
       </Card>
 
-      <Card title="Sectional percentile over time">
-        {SECTIONS.every((s) => state.mocks.every((m) => !m.sections[s])) ? (
+      <Card title="Sectional percentile over time" subtitle="Full mocks only, as recorded.">
+        {SECTIONS.every((s) => fullMocks(state).every((m) => !(m.sections[s]?.percentile ?? 0))) ? (
           <Empty>No sectional percentiles recorded yet.</Empty>
         ) : (
           <TrendChart
-            labels={[...state.mocks].sort((a, b) => (a.date < b.date ? -1 : 1)).map((m) => formatDate(m.date))}
+            labels={fullMocks(state).map((m) => formatDate(m.date))}
             series={SECTIONS.map((s) => ({
               name: s,
-              values: [...state.mocks]
-                .sort((a, b) => (a.date < b.date ? -1 : 1))
-                .map((m) => m.sections[s]?.percentile ?? null),
+              // Full mocks only, and a blank percentile is a gap in the line,
+              // never a fall to zero.
+              values: fullMocks(state).map((m) => {
+                const pct = m.sections[s]?.percentile;
+                return pct && pct > 0 ? pct : null;
+              }),
               tone: (s === 'VARC' ? 'ok' : s === 'DILR' ? 'warn' : 'risk') as 'ok' | 'warn' | 'risk',
             }))}
             target={state.profile.targetPercentile}

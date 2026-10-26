@@ -4,6 +4,7 @@ import type { Goal, GoalPriority } from '../domain/types';
 import { useStore } from '../state/store';
 import { useEngine } from '../state/useEngine';
 import { Callout, Card, Empty, Field, Modal, StatusPill, Tag } from '../ui/components';
+import { TopicManager } from '../ui/components/TopicManager';
 
 const PRIORITY_HELP: Record<GoalPriority, string> = {
   P1: 'Critical - directly determines whether the main goal succeeds.',
@@ -168,6 +169,8 @@ export function Goals() {
           );
         })
       )}
+
+      <TopicManager />
 
       {(editing || creating) && (
         <GoalModal

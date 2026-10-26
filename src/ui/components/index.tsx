@@ -81,7 +81,9 @@ export function Card({
 
 const STATUS_META: Record<TrackStatus, { label: string; cls: string; shape: string }> = {
   ON_TRACK: { label: 'On track', cls: 'status-ok', shape: '' },
+  STRETCH: { label: 'Stretch', cls: 'status-accent', shape: 'square' },
   AT_RISK: { label: 'At risk', cls: 'status-warn', shape: 'square' },
+  OFF_TRACK: { label: 'Off track', cls: 'status-risk', shape: 'triangle' },
   BEHIND: { label: 'Behind', cls: 'status-risk', shape: 'triangle' },
   UNCONFIRMED: { label: 'Insufficient data', cls: 'status-neutral', shape: 'square' },
 };

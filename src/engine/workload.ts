@@ -15,7 +15,8 @@ import type {
 } from '../domain/types';
 import { capacityBetween, sustainableWeeklyMin } from './capacity';
 import { backlogTasks, clamp, isOpen, mean, openErrors, unanalysedMocks } from './derive';
-import { calculateTrajectory, recommendedMockCadence } from './readiness';
+import { calculateForecast } from './forecast';
+import { recommendedMockCadence } from './readiness';
 
 const STATUS_COVERAGE_WEIGHT: Record<string, number> = {
   'not-started': 1,
@@ -186,28 +187,45 @@ export interface Feasibility {
   inputs: { label: string; value: string }[];
 }
 
+/** The forecast's ladder, worst last. Capacity can only move a status down it. */
+const LADDER: TrackStatus[] = ['ON_TRACK', 'STRETCH', 'AT_RISK', 'OFF_TRACK'];
+
+function worsen(status: TrackStatus): TrackStatus {
+  const i = LADDER.indexOf(status);
+  return i < 0 ? status : LADDER[Math.min(LADDER.length - 1, i + 1)];
+}
+
 /**
- * The goal feasibility engine: trajectory evidence, corrected by whether the
- * remaining workload can actually fit in the remaining capacity.
+ * The goal feasibility engine: the forecast's rule-based status, corrected by
+ * whether the remaining workload can actually fit in the remaining capacity.
  */
 export function calculateFeasibility(state: AppState, today: ISODate): Feasibility {
-  const trajectory = calculateTrajectory(state, today);
+  const forecast = calculateForecast(state, today);
   const workload = projectRemainingWorkload(state, today);
   const safety = criticalSafetyCheck(state, today);
+  const target = state.profile.targetPercentile;
 
-  let status = trajectory.status;
-  let reason = trajectory.reason;
+  let status = forecast.status;
+  const reasons: string[] = [forecast.statusRule];
+  if (forecast.forecast?.percentile && forecast.forecast.probability !== undefined) {
+    const p = forecast.forecast.percentile;
+    reasons.unshift(
+      `Likely exam-day percentile ${round(p.p50)}, range ${round(p.p10)} to ${round(p.p90)}; chance of ${target} ${chance(forecast.forecast.probability)}.`,
+    );
+  }
 
   // Capacity can only make the picture worse, never better.
   if (status !== 'UNCONFIRMED') {
-    if (workload.health === 'UNSUSTAINABLE' && status === 'ON_TRACK') {
-      status = 'AT_RISK';
-      reason += ' However, the identified remaining workload does not fit the remaining capacity, so the plan itself is the risk rather than the performance.';
-    } else if (workload.health === 'UNSUSTAINABLE' && status === 'AT_RISK') {
-      status = 'BEHIND';
-      reason += ' The remaining workload also exceeds realistic capacity by a wide margin, which compounds the performance gap.';
+    if (workload.health === 'UNSUSTAINABLE') {
+      const before = status;
+      status = worsen(status);
+      if (status !== before) {
+        reasons.push(
+          'The remaining workload does not fit the remaining capacity, so the status is moved down one step: the plan itself is a risk, not just the scores.',
+        );
+      }
     } else if (workload.health === 'AT_RISK' && status === 'ON_TRACK') {
-      reason += ' Capacity is tight, so protect the buffer rather than adding volume.';
+      reasons.push('Capacity is tight, so protect the buffer rather than adding volume.');
     }
   }
 
@@ -215,22 +233,33 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
     status === 'UNCONFIRMED'
       ? 'Target feasibility: UNCONFIRMED'
       : status === 'ON_TRACK'
-        ? `${state.profile.targetPercentile} percentile appears realistic on current evidence`
-        : status === 'AT_RISK'
-          ? `${state.profile.targetPercentile} percentile is still realistic, but needs meaningful correction`
-          : `${state.profile.targetPercentile} percentile is not reconcilable with the current trajectory and capacity`;
+        ? `${target} percentile is within reach on current evidence`
+        : status === 'STRETCH'
+          ? `${target} percentile is a stretch: within 4 points of the likely outcome`
+          : status === 'AT_RISK'
+            ? `${target} percentile is at risk: 4 to 8 points short of the likely outcome`
+            : `${target} percentile is off track: more than 8 points short of the likely outcome`;
 
+  const level = forecast.level;
+  const lead = forecast.constraint.top[0];
   const inputs: { label: string; value: string }[] = [
-    { label: 'Days remaining', value: String(trajectory.daysRemaining) },
-    { label: 'Mocks recorded', value: String(trajectory.history.length) },
+    { label: 'Days remaining', value: String(forecast.daysRemaining) },
+    { label: 'Full mocks with marks', value: `${forecast.n} of ${forecast.fullMocks}` },
     { label: 'Unanalysed mocks', value: String(unanalysedMocks(state).length) },
-    { label: 'Current percentile', value: trajectory.current === undefined ? 'no data' : String(trajectory.current) },
-    { label: 'Trend', value: trajectory.trend === 'UNKNOWN' ? 'not established' : trajectory.trend.toLowerCase() },
-    { label: 'Main constraint', value: trajectory.constraint ?? 'not established' },
+    {
+      label: 'Current level',
+      value: !level
+        ? 'not recorded'
+        : level.percentile !== undefined
+          ? `${round(level.marks)} marks (about ${round(level.percentile)} percentile)`
+          : `${round(level.marks)} marks`,
+    },
+    { label: 'Trend', value: forecast.trend.label === 'INSUFFICIENT' ? 'not established' : forecast.trend.label.toLowerCase() },
+    { label: 'Binding constraint', value: lead ? `${lead.section} (${lead.kind.toLowerCase()} gap)` : 'not established' },
     { label: 'Remaining workload', value: formatHours(workload.remainingMin, 0) },
     { label: 'Required per week', value: formatHours(workload.requiredPerWeekMin, 1) },
     { label: 'Realistic per week', value: formatHours(workload.realisticPerWeekMin, 1) },
-    { label: 'Actual per week (recent)', value: workload.actualPerWeekMin ? formatHours(workload.actualPerWeekMin, 1) : 'no data' },
+    { label: 'Actual per week (recent)', value: workload.actualPerWeekMin ? formatHours(workload.actualPerWeekMin, 1) : 'not recorded' },
     { label: 'Workload health', value: workload.health.replace('_', ' ').toLowerCase() },
     { label: 'Open errors', value: String(openErrors(state).length) },
     { label: 'Backlog items', value: String(backlogTasks(state).length) },
@@ -239,10 +268,18 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
   return {
     status,
     headline,
-    reason,
-    nextAction: trajectory.recommendedAction,
+    reason: reasons.join(' '),
+    nextAction: forecast.recommendedAction,
     workload,
     safety,
     inputs,
   };
+}
+
+function round(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function chance(share: number): string {
+  return share < 0.01 ? 'under 1%' : share > 0.99 ? 'over 99%' : `about ${Math.round(share * 100)}%`;
 }

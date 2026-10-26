@@ -7,17 +7,16 @@ import { SECTION_LABELS } from '../config/catConfig';
 import { formatHours } from '../domain/date';
 import type { AppState, ISODate, Insight } from '../domain/types';
 import { calculateWeekCapacity } from './capacity';
-import { isOpen, unanalysedMocks, weaknessScores } from './derive';
+import { isOpen, unanalysedMocks } from './derive';
 import { detectBehaviourPatterns } from './patterns';
-import { calculateTrajectory } from './readiness';
+import { calculateForecast } from './forecast';
 import { calculateFeasibility } from './workload';
 
 export function generateInsights(state: AppState, today: ISODate, weekStart: ISODate): Insight[] {
   const out: Insight[] = [];
   const feasibility = calculateFeasibility(state, today);
   const workload = feasibility.workload;
-  const trajectory = calculateTrajectory(state, today);
-  const weakness = weaknessScores(state, today);
+  const forecast = calculateForecast(state, today);
 
   /* Behaviour patterns become insights verbatim - they already carry both
      the observation and the intervention. */
@@ -63,34 +62,42 @@ export function generateInsights(state: AppState, today: ISODate, weekStart: ISO
     });
   }
 
-  /* Trajectory */
-  if (trajectory.status === 'UNCONFIRMED') {
+  /* Forecast */
+  if (forecast.status === 'UNCONFIRMED') {
     out.push({
-      id: 'trajectory:unconfirmed',
-      text: 'Target feasibility is unconfirmed: there is no mock evidence yet. The first baseline is the highest-value action available.',
+      id: 'forecast:unconfirmed',
+      text: `Target feasibility is unconfirmed. ${forecast.recommendedAction}`,
       tone: 'neutral',
-      source: 'Feasibility engine',
+      source: 'Forecast',
     });
-  } else if (trajectory.trend === 'IMPROVING' && trajectory.status !== 'ON_TRACK') {
+  } else if (forecast.cleanPaper?.consistencyHeadline) {
     out.push({
-      id: 'trajectory:improving',
-      text: `Your recent mock trend is improving, but ${SECTION_LABELS[trajectory.constraint ?? 'DILR']} remains the main constraint.`,
-      tone: 'neutral',
-      source: 'Feasibility engine',
-    });
-  } else if (trajectory.status === 'ON_TRACK') {
-    out.push({
-      id: 'trajectory:on-track',
-      text: 'Recent mock performance has crossed the target threshold. Focus should now shift towards consistency, analysis and section balance rather than new material.',
-      tone: 'positive',
-      source: 'Feasibility engine',
-    });
-  } else if (trajectory.trend === 'VOLATILE') {
-    out.push({
-      id: 'trajectory:volatile',
-      text: 'Mock scores are swinging widely between attempts. Consistency of question selection is a bigger lever right now than new topics.',
+      id: 'forecast:consistency',
+      text: `Your best section scores together already clear ${forecast.target}, but only ${forecast.cleanPaper.count} of ${forecast.cleanPaper.n} papers had every section above the floor. Consistency, not new material, is the lever.`,
       tone: 'warning',
-      source: 'Feasibility engine',
+      source: 'Forecast',
+    });
+  } else if (forecast.trend.label === 'RISING' && forecast.status !== 'ON_TRACK') {
+    const lead = forecast.constraint.top[0];
+    out.push({
+      id: 'forecast:rising',
+      text: `Marks are rising with a 90% interval that excludes zero${lead ? `, and ${SECTION_LABELS[lead.section]} is the binding constraint` : ''}.`,
+      tone: 'neutral',
+      source: 'Forecast',
+    });
+  } else if (forecast.status === 'ON_TRACK') {
+    out.push({
+      id: 'forecast:on-track',
+      text: 'The likely exam-day percentile is within a point of the target. Protect consistency and analysis rather than adding new material.',
+      tone: 'positive',
+      source: 'Forecast',
+    });
+  } else if (forecast.trend.label === 'VOLATILE') {
+    out.push({
+      id: 'forecast:volatile',
+      text: 'Marks swing by 8 or more between recent papers with no clear direction. Consistency of question selection is a bigger lever right now than new topics.',
+      tone: 'warning',
+      source: 'Forecast',
     });
   }
 
@@ -111,14 +118,14 @@ export function generateInsights(state: AppState, today: ISODate, weekStart: ISO
     });
   }
 
-  /* Weakness */
-  const weakest = (['VARC', 'DILR', 'QA'] as const).reduce((a, b) => (weakness[b] > weakness[a] ? b : a), 'VARC');
-  if (weakness[weakest] > 0.6) {
+  /* Binding constraint - only once it can be named from enough mocks */
+  const lead = forecast.constraint.top[0];
+  if (forecast.constraint.established && lead) {
     out.push({
-      id: `weakness:${weakest}`,
-      text: `${SECTION_LABELS[weakest]} is currently the section putting the target at most risk. Planning weight has been shifted towards it.`,
+      id: `constraint:${lead.section}`,
+      text: `${SECTION_LABELS[lead.section]} is the binding constraint: ${lead.why}`,
       tone: 'warning',
-      source: 'Section readiness',
+      source: 'Forecast',
     });
   }
 

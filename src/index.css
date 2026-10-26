@@ -418,6 +418,73 @@ a:hover { text-decoration: underline; }
   display: block;
 }
 
+/* ---------------- Forecast ---------------- */
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 720px) {
+  .scenario-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.scenario {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border-top: 3px solid var(--border-strong);
+}
+
+.scenario-bad { border-top-color: var(--risk); }
+.scenario-likely { border-top-color: var(--accent); }
+.scenario-great { border-top-color: var(--ok); }
+
+.scenario-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.scenario-value {
+  font-size: 1.7rem;
+  font-weight: 650;
+  line-height: 1.1;
+  margin-top: 4px;
+}
+
+.scenario-chance {
+  margin: 6px 0 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.scenario .bullets { margin: 0; }
+
+/* A constraint row and its explanation read as one entry. */
+tr.no-rule td { border-bottom: 0; padding-bottom: 2px; }
+td.why-row { padding-top: 0; white-space: normal; }
+
+/* The one attempt band and one accuracy floor per section (rule 9.3). */
+.section-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 12px 0 2px;
+}
+
+.section-rules > div {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+}
+
+.section-rules .section-label { margin: 0 0 2px; }
+.section-rules .mono { font-size: 1.05rem; font-weight: 650; }
+
 /* ---------------- Screenshot import ---------------- */
 
 .shot-drop {

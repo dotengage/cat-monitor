@@ -272,8 +272,11 @@ function buildSingleFocus(
   if (workload.health === 'UNSUSTAINABLE') {
     return 'Cut scope. The remaining workload does not fit the remaining capacity, and no amount of scheduling fixes that.';
   }
-  if (feasibility.status === 'BEHIND' && feasibility.workload.remainingMin > 0) {
-    return `Concentrate everything on ${feasibility.inputs.find((i) => i.label === 'Main constraint')?.value ?? 'the weakest section'}. Breadth is no longer affordable.`;
+  if (feasibility.status === 'OFF_TRACK' && feasibility.workload.remainingMin > 0) {
+    const constraint = feasibility.inputs.find((i) => i.label === 'Binding constraint')?.value;
+    return constraint && constraint !== 'not established'
+      ? `Concentrate on ${constraint}. Breadth is no longer affordable.`
+      : feasibility.nextAction;
   }
   return feasibility.nextAction;
 }

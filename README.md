@@ -39,7 +39,7 @@ It optimises for exam readiness — mock performance, section balance, error red
 | Area | Behaviour |
 | --- | --- |
 | **Onboarding** | Collects goal, exam date, commitments, realistic availability, energy profile and any existing mock data before generating anything. |
-| **Feasibility engine** | Reports `ON TRACK` / `AT RISK` / `BEHIND` / `INSUFFICIENT DATA` with the evidence behind it. Never a fabricated probability. |
+| **Forecast** | Works in marks, weights recent mocks, tests the trend for significance, finds the binding constraint from variance, and simulates exam day as a range. Rule-based status: `ON TRACK` / `STRETCH` / `AT RISK` / `OFF TRACK`, with the rule printed. |
 | **Capacity model** | `base × energy × commitments × learned realism`, then 20–30% buffer held back. Every factor is shown and configurable. |
 | **Weekly planning** | 3–5 outcomes and a small number of specific, startable tasks that fit inside planned capacity. |
 | **Daily planning** | 1–2 must-do, 1–2 should-do, 1 optional, plus visible unallocated buffer. No hourly timetable. |
@@ -66,7 +66,7 @@ These are enforced in code, not just documentation:
 2. **The plan adapts.** It is rebuilt from actual data, not patched.
 3. **Buffer is protected.** Planning uses ~70–80% of realistic capacity. Buffer is never allocated.
 4. **No task debt.** Missed work is judged, not stacked onto tomorrow. The system will say "this is no longer worth carrying forward."
-5. **No fake certainty.** Qualitative labels with stated evidence, never "87.32% chance of 96 percentile."
+5. **No fake certainty.** Every number carries its range and the evidence behind it. A chance of reaching the target is shown only as the share of simulated papers that reach it, beside the band it came from, and it is labelled indicative when the mocks behind it are few.
 6. **Diagnose the system, not the user.** The copy says "your original estimate was inaccurate", never "you failed to follow your plan."
 7. **The user can always override.** Keep, move, protect, remove, ignore — all available on every task.
 
@@ -225,17 +225,28 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 
 ## How the CAT tracker works
 
-**Sections.** VARC, DILR and QA each get a readiness score (0–100) blending latest sectional percentile, practice accuracy, weighted topic coverage, error recurrence and logged volume — so the score means something before any mock exists.
+**Sections.** Each section's readiness is its recency-weighted level from full mocks, converted to section percentile through a curve fitted to your own section marks and percentiles, with the latest percentile, the average of the last five, a significance-tested trend, an exam-day range, one target attempt band and one accuracy floor. Topic coverage, sets solved and error recurrence are deliberately not part of it: they are inputs to planning, not measures of readiness.
 
-**Topics.** ~40 seeded topics with an exam weight (1–5) and an hours-to-competence estimate, each moving through `not-started → learning → practised → strong` (or `skipped`). Topic status drives the remaining-workload projection.
+**Topics.** ~40 seeded topics with an exam weight (1–5) and an hours-to-competence estimate, each moving through `not-started → learning → practised → strong` (or `skipped`). Topic status drives the remaining-workload projection, and is edited from Goals.
 
 **DILR** is tracked at set level, not just question level: sets attempted, sets solved, time per set, and why each set was missed (chose incorrectly, understood but could not solve, calculation, logic, time, abandoned too late, abandoned too early, careless).
 
 **Error log.** Twelve error categories, each entry carrying date, section, topic, question reference, what went wrong, the corrected approach, a revisit date and resolution state. Error history feeds directly into what gets planned next: repeated types raise the priority of the matching topics and generate error-review tasks.
 
-**Mocks.** Scores can be corrected after the fact with *Edit scores* — the analysis, lessons and weak topics you recorded stay attached, and the corrected percentile flows straight into the trajectory and feasibility engine. A mock is only complete when it has been attempted, recorded, analysed, its errors classified, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
+**Mocks.** Scores can be corrected after the fact with *Edit scores* — the analysis, lessons and weak topics you recorded stay attached, and the corrected numbers flow straight into the forecast. A mock is only complete when it has been attempted, recorded, analysed, its errors classified, its weak topics identified and its lessons written. Until then it is flagged **Incomplete analysis**, and the mock cadence is throttled — because a mock without analysis is worth less than one with it.
 
-**Trajectory.** Percentile history is smoothed (most recent mocks weighted highest) and projected forward with a damped slope, crediting at most four weeks of continued improvement. A steep early trend cannot silently declare a distant target already achieved. With no mocks the answer is `Target feasibility: UNCONFIRMED` — not an optimistic guess.
+**The forecast** (`src/engine/forecast/`) follows a written methodology, step by step:
+
+1. **Hygiene first.** A blank field is missing, never zero: the mock form stores a blank percentile as `0`, and averaging those would invent collapses that never happened. Sectionals are kept out of every full-mock statistic and used only as a cross-check.
+2. **Marks, not percentiles.** Percentile is compressed near the top, so averaging it distorts both level and trend. All arithmetic is in marks; a curve fitted to your own (marks, percentile) pairs converts back at the end - a logistic once there are five pairs, a provisional logit-space interpolation before that. It also tells you how many marks one more percentile point costs at your level.
+3. **Current level** is a recency-weighted mean of marks (21-day half-life) with a one-SD band. Never the latest mock.
+4. **Trend** is a weighted regression with a 90% interval: `RISING` or `FALLING` only when the interval excludes zero; otherwise `FLAT` or `VOLATILE` by the spread of the last five. Block averages are reported alongside, and lead when they rise but the regression cannot confirm it. Under six mocks it is labelled directional.
+5. **Binding constraint** is the section with the highest variance share x ceiling gap, never the lowest section in the last mock, and is classified as a *consistency* gap or a *capability* gap because they need opposite remedies. Not named from fewer than three mocks.
+6. **Exam day** is 10,000 papers resampled as whole mocks (so a bad VARC day and a bad QA day stay the same day), with drift only when the trend is significant and capped, and provider noise added. Reported as bad day / likely / great day with the conditions for each. Guardrails: the likely value never exceeds your demonstrated best unless marks are significantly rising; under five mocks the band is widened and marked indicative.
+7. **Status** is a rule on the gap between target and likely percentile (1 / 4 / 8 points), plus `HIGH VARIANCE` above a 10-point spread, and the rule is printed with it.
+8. **Error patterns** are mined from your analysis notes into eight behaviour categories, tracked as new, persistent or improving, and notes that contradict each other across dates are flagged. Topic work is recommended only when concept gaps are a top-two pattern.
+
+The same blocks, in the same order, make up the mock report PDF. The simulation is seeded from the evidence, so the same mocks always give the same answer.
 
 ---
 
@@ -479,14 +490,15 @@ npm test
 Stated plainly, because the app's whole premise is not overstating what it knows:
 
 - **The capacity formula is a planning aid, not a prediction.** It cannot know that you will be ill on Thursday. That is what buffer is for.
-- **Feasibility labels are judgements from thin evidence.** Three mocks are three data points. The app says so, and refuses to convert them into a probability.
+- **The forecast is only as good as the mocks behind it.** Three mocks are three data points. Under five, the band is widened and labelled indicative; under three, no trend or constraint is named at all. Mock percentiles are not exam percentiles either, which is why provider noise is part of every simulation.
+- **Error-pattern tags are keyword matching.** They are evidence to read, not a diagnosis, and the contradiction check can flag two notes that only look opposed.
 - **Topic hour estimates are generic**, not personalised, until you have logged enough practice for accuracy data to take over.
 - **No natural-language input yet.** Quick actions cover the common updates (low energy, unexpected commitment, travel, finished early, missed). Free-text parsing would sit behind an interface so an AI API could be added later — the core planner must keep working without one.
 - **Sync is eventually consistent, not real-time.** Changes propagate within seconds of an edit settling, or when you reopen the app — not instantly while both devices are open. Two devices editing *the same record* within the same few seconds resolve to the newer edit, so one of the two is discarded by design.
 - **Sync depends on GitHub being reachable.** Offline, the app is unaffected; it reconciles on the next connection.
 - **Notifications are preferences only.** There is no background scheduler; reminders surface in-app.
 - **Streaks are a consistency signal, not a goal.** The app deliberately does not gamify them: no badges, no celebration, no penalty copy. A broken streak is reported as information.
-- **Charts are deliberately minimal.** Hand-rolled SVG keeps the bundle small; they are not interactive.
+- **Charts are hand-rolled SVG** to keep the bundle small: hover for values, but no zooming or panning.
 
 ---
 

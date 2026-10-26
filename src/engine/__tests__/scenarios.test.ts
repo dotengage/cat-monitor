@@ -13,7 +13,7 @@ import { calculateWeekCapacity, capacityBetween } from '../capacity';
 import { generateWeek } from '../generateWeek';
 import { handleMissedTask } from '../missedTask';
 import { detectBehaviourPatterns } from '../patterns';
-import { calculateTrajectory } from '../readiness';
+import { calculateForecast } from '../forecast';
 import { rebalanceWeek } from '../rebalance';
 import { assessCapacityReality } from '../weeklyReview';
 import { calculateFeasibility, projectRemainingWorkload } from '../workload';
@@ -142,13 +142,18 @@ describe('Scenario 8: repeated morning failures', () => {
 
 describe('Scenario 9: remaining work exceeds capacity', () => {
   it('flags the target as at risk and cuts lower-value work', () => {
-    const state = makeState({ mocks: [makeMock({ overallPercentile: 70 })] });
+    // Three mocks with marks and percentile, so the forecast has a status to worsen.
+    const state = makeState({
+      mocks: [60, 62, 64].map((m, i) =>
+        makeMock({ id: `m${i}`, date: addDays(TODAY, -14 + i * 7), overallScore: m, overallPercentile: 68 + i * 2 }),
+      ),
+    });
     state.profile.weekdayHours = { min: 0.25, normal: 0.5, max: 1 };
     state.profile.weekendHours = { min: 0.5, normal: 1, max: 2 };
 
     const feasibility = calculateFeasibility(state, TODAY);
     expect(feasibility.safety.breached).toBe(true);
-    expect(['AT_RISK', 'BEHIND']).toContain(feasibility.status);
+    expect(['AT_RISK', 'OFF_TRACK']).toContain(feasibility.status);
     expect(feasibility.safety.suggestions.join(' ')).toMatch(/lowest-weight topics/i);
 
     const withJunk = {
@@ -172,17 +177,28 @@ describe('Scenario 9: remaining work exceeds capacity', () => {
 });
 
 describe('Scenario 10: rapid mock improvement', () => {
-  it('shifts the recommendation from fundamentals to consistency and analysis', () => {
+  it('recognises the climb and does not send you back to fundamentals', () => {
+    // Marks and percentiles that rise together, as they do in a real climb.
+    const marks = [55, 62, 70, 80, 88, 95, 103];
     const percentiles = [72, 76, 81, 87, 91, 94, 97];
-    const mocks = percentiles.map((p, i) =>
-      makeMock({ name: `Mock ${i + 1}`, date: addDays(TODAY, -70 + i * 7), overallPercentile: p }),
+    const mocks = marks.map((m, i) =>
+      makeMock({
+        name: `Mock ${i + 1}`,
+        date: addDays(TODAY, -42 + i * 7),
+        overallScore: m,
+        overallPercentile: percentiles[i],
+        sections: {
+          VARC: { score: Math.round(m * 0.4), percentile: 0, attempts: 18, correct: 12, incorrect: 6 },
+          DILR: { score: Math.round(m * 0.25), percentile: 0, attempts: 12, correct: 6, incorrect: 6 },
+          QA: { score: m - Math.round(m * 0.4) - Math.round(m * 0.25), percentile: 0, attempts: 20, correct: 12, incorrect: 8 },
+        },
+      }),
     );
-    const trajectory = calculateTrajectory(makeState({ mocks }), TODAY);
+    const forecast = calculateForecast(makeState({ mocks }), TODAY);
 
-    expect(trajectory.status).toBe('ON_TRACK');
-    expect(trajectory.trend).toBe('IMPROVING');
-    expect(trajectory.recommendedAction).toMatch(/consistency/i);
-    expect(trajectory.recommendedAction).not.toMatch(/beginner|start from scratch/i);
+    expect(forecast.trend.label).toBe('RISING');
+    expect(['ON_TRACK', 'STRETCH']).toContain(forecast.status);
+    expect(forecast.recommendedAction).not.toMatch(/beginner|start from scratch|topic|coverage/i);
   });
 });
 

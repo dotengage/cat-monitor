@@ -14,14 +14,13 @@ const emptyScore: SectionScore = { score: 0, percentile: 0, attempts: 0, correct
 
 export function Mocks() {
   const { state, dispatch, today } = useStore();
-  const { cadence } = useEngine();
+  const { cadence, forecast } = useEngine();
   const [adding, setAdding] = useState<'full' | 'sectional' | null>(null);
   const [editingMock, setEditingMock] = useState<Mock | null>(null);
   const [analysing, setAnalysing] = useState<Mock | null>(null);
 
   const mocks = sortedMocks(state).reverse();
   const full = mocks.filter((m) => m.kind === 'full');
-  const percentiles = full.map((m) => m.overallPercentile).filter((p): p is number => typeof p === 'number');
 
   return (
     <>
@@ -53,9 +52,13 @@ export function Mocks() {
         <StatGrid>
           <Stat label="Mocks completed" value={full.length} />
           <Stat label="Analysed" value={full.filter((m) => m.analysed).length} sub={`${state.mocks.filter((m) => !m.analysed).length} pending`} />
-          <Stat label="Average percentile" value={percentiles.length ? avg(percentiles).toFixed(1) : '—'} />
-          <Stat label="Best percentile" value={percentiles.length ? Math.max(...percentiles) : '—'} />
-          <Stat label="Latest" value={percentiles.length ? percentiles[percentiles.length - 1] : '—'} />
+          <Stat
+            label="Average (last 5)"
+            value={forecast.recentAveragePercentile ?? '—'}
+            sub={forecast.recentAverageCount > 0 ? `of ${forecast.recentAverageCount} recorded percentiles` : 'no percentiles yet'}
+          />
+          <Stat label="Best percentile" value={forecast.bestPercentile ?? '—'} />
+          <Stat label="Latest percentile" value={forecast.latestPercentile ?? '—'} />
           <Stat label="Sectionals" value={mocks.filter((m) => m.kind === 'sectional').length} />
         </StatGrid>
         <Callout tone={cadence.analysisBacklog > 0 ? 'warn' : 'neutral'} >
@@ -101,7 +104,7 @@ export function Mocks() {
                         <strong>Overall</strong>
                       </td>
                       <td className="num mono">{mock.overallScore ?? '—'}</td>
-                      <td className="num mono">{mock.overallPercentile ?? '—'}</td>
+                      <td className="num mono">{mock.overallPercentile ? mock.overallPercentile : '—'}</td>
                       <td className="num mono">—</td>
                       <td className="num mono">—</td>
                       <td className="num mono">—</td>
@@ -114,9 +117,10 @@ export function Mocks() {
                       <tr key={s}>
                         <td>{SECTION_LABELS[s]}</td>
                         <td className="num mono">{sec.score}</td>
-                        <td className="num mono">{sec.percentile}</td>
-                        <td className="num mono">{sec.attempts}</td>
-                        <td className="num mono">{sec.correct}</td>
+                        {/* A blank field is saved as 0; show it as missing, never as a score. */}
+                        <td className="num mono">{sec.percentile > 0 ? sec.percentile : '—'}</td>
+                        <td className="num mono">{sec.attempts > 0 ? sec.attempts : '—'}</td>
+                        <td className="num mono">{sec.attempts > 0 ? sec.correct : '—'}</td>
                         <td className="num mono">{acc === null ? '—' : `${acc}%`}</td>
                       </tr>
                     );
@@ -193,10 +197,6 @@ export function Mocks() {
       {analysing && <AnalysisModal mock={analysing} onClose={() => setAnalysing(null)} />}
     </>
   );
-}
-
-function avg(values: number[]): number {
-  return values.reduce((a, v) => a + v, 0) / values.length;
 }
 
 function MockModal({
