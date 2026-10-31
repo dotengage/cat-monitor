@@ -270,6 +270,8 @@ Built to behave like Anki, because that is what the habit is formed around: **Fl
 
 **Browse** lists every card with Anki-style search (`deck:`, `tag:`, `is:new` / `learn` / `review` / `due` / `suspended` / `leech`, `-` to negate), sorting, an editor beside the list, a flip preview, and bulk move, suspend, forget and delete.
 
+**Resetting a deck.** *Reset progress*, in a deck's ⋯ menu or on its page, sends all of its cards back to new in their original order, as if never studied, and frees their places in today's new-card allowance. Suspended cards stay suspended. Review history is kept, so your stats stay true. To reset only some cards, select them in Browse and choose Forget.
+
 **Stats** shows today's work, true retention for young and mature cards (review answers that were not Again - the number spaced repetition is trying to hold steady), card counts, reviews per day, the next 30 days' workload, a calendar, interval spread and the answer-button breakdown.
 
 ### Importing and exporting Anki packages
@@ -499,7 +501,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-421 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
+423 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |

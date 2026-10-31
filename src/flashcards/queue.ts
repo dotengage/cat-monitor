@@ -26,14 +26,18 @@ export interface DeckCounts {
   suspended: number;
 }
 
-/** How much of today's allowance each deck has already used. */
-export function usedToday(reviews: CardReview[], now: number): Map<string, { introduced: number; reviewed: number }> {
+/**
+ * How much of today's allowance each deck has already used. A card first
+ * seen today that is new again was reset, and no longer uses up a place.
+ */
+export function usedToday(reviews: CardReview[], cards: Flashcard[], now: number): Map<string, { introduced: number; reviewed: number }> {
   const today = studyDay(now);
+  const stillNew = new Set(cards.filter((c) => c.state === 'new').map((c) => c.id));
   const out = new Map<string, { introduced: number; reviewed: number }>();
   for (const r of reviews) {
     if (studyDay(r.at) !== today) continue;
     const entry = out.get(r.deckId) ?? { introduced: 0, reviewed: 0 };
-    if (r.stateBefore === 'new') entry.introduced += 1;
+    if (r.stateBefore === 'new' && !stillNew.has(r.cardId)) entry.introduced += 1;
     else if (r.stateBefore === 'review') entry.reviewed += 1;
     out.set(r.deckId, entry);
   }
@@ -72,7 +76,7 @@ function pools(deck: Deck, cards: Flashcard[], used: { introduced: number; revie
 }
 
 export function deckCounts(deck: Deck, cards: Flashcard[], reviews: CardReview[], now: number): DeckCounts {
-  const p = pools(deck, cards, usedToday(reviews, now).get(deck.id), now);
+  const p = pools(deck, cards, usedToday(reviews, cards, now).get(deck.id), now);
   return { newCount: p.news.length, learning: p.learning.length, review: p.reviews.length, total: p.total, suspended: p.suspended };
 }
 
@@ -95,7 +99,7 @@ export function interleave<T>(reviews: T[], news: T[]): T[] {
 
 /** The day's reviews and new cards for a set of decks, in study order. */
 export function buildQueue(decks: Deck[], cards: Flashcard[], reviews: CardReview[], now: number): string[] {
-  const used = usedToday(reviews, now);
+  const used = usedToday(reviews, cards, now);
   const allReviews: Flashcard[] = [];
   const allNew: Flashcard[] = [];
   for (const deck of decks) {

@@ -4,6 +4,7 @@ import { migrate } from '../../data/migrate';
 import { mergeStates } from '../../data/sync/merge';
 import type { AppState } from '../../domain/types';
 import { reducer } from '../../state/store';
+import { deckCounts } from '../queue';
 import { flashcardReducer } from '../reducer';
 import { GOOD, AGAIN } from '../scheduler';
 
@@ -70,6 +71,33 @@ describe('cards', () => {
     s = flashcardReducer(s, { type: 'fc/cards/move', ids: ['c1'], deckId: 'd2' });
     expect(s.flashcards[0].suspended).toBe(true);
     expect(s.flashcards[0].deckId).toBe('d2');
+  });
+});
+
+describe('resetting a deck', () => {
+  it('sends every card back to new, in its original order, keeping the history', () => {
+    let s = withCard();
+    s = flashcardReducer(s, { type: 'fc/card/add', id: 'c2', deckId: 'd1', front: 'Q2', back: 'A2', tags: [] });
+    s = flashcardReducer(s, { type: 'fc/card/add', id: 'c3', deckId: 'd1', front: 'Q3', back: 'A3', tags: [] });
+    s = flashcardReducer(s, { type: 'fc/answer', cardId: 'c2', rating: GOOD, now: NOW, timeMs: 1000, reviewId: 'r1' });
+    s = flashcardReducer(s, { type: 'fc/answer', cardId: 'c2', rating: GOOD, now: NOW, timeMs: 1000, reviewId: 'r2' });
+    // Array order deliberately differs from study order.
+    s = { ...s, flashcards: [...s.flashcards].reverse() };
+
+    const reset = flashcardReducer(s, { type: 'fc/cards/forget', ids: ['c3', 'c2', 'c1'] });
+    expect(reset.flashcards.every((c) => c.state === 'new' && c.reps === 0 && c.interval === 0 && c.lapses === 0)).toBe(true);
+    expect([...reset.flashcards].sort((a, b) => a.position - b.position).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
+    expect(reset.cardReviews).toHaveLength(2);
+  });
+
+  it('gives a reset card its place back in the new-card allowance for today', () => {
+    let s = withCard();
+    s = flashcardReducer(s, { type: 'fc/deck/update', id: 'd1', options: { newPerDay: 1 } });
+    s = flashcardReducer(s, { type: 'fc/answer', cardId: 'c1', rating: GOOD, now: NOW, timeMs: 1000, reviewId: 'r1' });
+    expect(deckCounts(s.decks[0], s.flashcards, s.cardReviews, NOW).newCount).toBe(0);
+
+    const reset = flashcardReducer(s, { type: 'fc/cards/forget', ids: ['c1'] });
+    expect(deckCounts(reset.decks[0], reset.flashcards, reset.cardReviews, NOW).newCount).toBe(1);
   });
 });
 

@@ -57,6 +57,13 @@ export function Flashcards() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.decks, state.flashcards, state.cardReviews],
   );
+  const resetDeck = (target: Deck) => {
+    const cards = state.flashcards.filter((c) => c.deckId === target.id);
+    const n = cards.length;
+    if (n === 0) return;
+    const ask = `Reset learning progress in "${target.name}"? ${n === 1 ? 'Its card goes' : `All ${n} cards go`} back to new and start again from scratch. Your review history and stats are kept. This cannot be undone.`;
+    if (window.confirm(ask)) dispatch({ type: 'fc/cards/forget', ids: cards.map((c) => c.id) });
+  };
   const totals = [...counts.values()].reduce(
     (a, c) => ({ newCount: a.newCount + c.newCount, learning: a.learning + c.learning, review: a.review + c.review }),
     { newCount: 0, learning: 0, review: 0 },
@@ -185,6 +192,7 @@ export function Flashcards() {
             onBrowse={() => go('browse', deck.id)}
             onStats={() => go('stats', deck.id)}
             onOptions={() => setOptionsFor(deck)}
+            onReset={() => resetDeck(deck)}
             onDelete={() => {
               const n = state.flashcards.filter((c) => c.deckId === deck.id).length;
               if (window.confirm(`Delete "${deck.name}" and its ${n} card${n === 1 ? '' : 's'}? This cannot be undone.`)) {
@@ -246,6 +254,7 @@ export function Flashcards() {
                                 { label: 'Add cards', onClick: () => setAdding({ deckId: d.id }) },
                                 { label: 'Browse', onClick: () => go('browse', d.id) },
                                 { label: 'Options', onClick: () => setOptionsFor(d) },
+                                ...(c.total > 0 ? [{ label: 'Reset progress', onClick: () => resetDeck(d), danger: true }] : []),
                               ]}
                             />
                           </td>
@@ -289,6 +298,7 @@ function DeckOverview({
   onBrowse,
   onStats,
   onOptions,
+  onReset,
   onDelete,
 }: {
   deck: Deck;
@@ -298,6 +308,7 @@ function DeckOverview({
   onBrowse: () => void;
   onStats: () => void;
   onOptions: () => void;
+  onReset: () => void;
   onDelete: () => void;
 }) {
   const nothing = counts.newCount + counts.learning + counts.review === 0;
@@ -342,6 +353,11 @@ function DeckOverview({
           <button type="button" className="btn small" onClick={onOptions}>
             Options
           </button>
+          {counts.total > 0 && (
+            <button type="button" className="btn small danger" onClick={onReset}>
+              Reset progress
+            </button>
+          )}
           <button type="button" className="btn small danger" onClick={onDelete}>
             Delete deck
           </button>

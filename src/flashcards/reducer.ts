@@ -146,8 +146,17 @@ export function flashcardReducer(state: AppState, action: FlashcardAction): AppS
       return { ...state, flashcards: patchCards(state, action.ids, (c) => ({ ...c, suspended: action.suspended })) };
 
     case 'fc/cards/forget': {
-      // Back to new, at the end of the new queue, with its history kept.
-      let position = nextPosition(state.flashcards);
+      // Back to new, at the end of the new queue, with its history kept. Cards
+      // keep their order relative to each other, so a reset deck is studied
+      // in the order it was first made.
+      const first = nextPosition(state.flashcards);
+      const chosen = new Set(action.ids);
+      const order = new Map(
+        state.flashcards
+          .filter((c) => chosen.has(c.id))
+          .sort((a, b) => a.position - b.position)
+          .map((c, i) => [c.id, first + i]),
+      );
       return {
         ...state,
         flashcards: patchCards(state, action.ids, (c) => ({
@@ -157,7 +166,8 @@ export function flashcardReducer(state: AppState, action: FlashcardAction): AppS
           interval: 0,
           ease: DEFAULT_DECK_OPTIONS.startingEase,
           due: 0,
-          position: position++,
+          position: order.get(c.id) ?? c.position,
+          reps: 0,
           lapses: 0,
           leech: false,
           tags: c.tags.filter((t) => t !== 'leech'),
