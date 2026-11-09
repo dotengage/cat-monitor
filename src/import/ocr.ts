@@ -98,7 +98,7 @@ export function otsuThreshold(histogram: Uint32Array, total: number): number {
  * is ink. Assuming "dark means ink" would invert a dark-theme capture into a
  * solid block.
  */
-export function binarise(bitmap: Bitmap): Uint8Array {
+export function binarise(bitmap: Bitmap, thin = false): Uint8Array {
   const { width, height, data } = bitmap;
   const total = width * height;
   const grey = new Uint8Array(total);
@@ -115,17 +115,79 @@ export function binarise(bitmap: Bitmap): Uint8Array {
     histogram[v] += 1;
   }
 
-  const threshold = otsuThreshold(histogram, total);
+  let threshold = otsuThreshold(histogram, total);
   let below = 0;
   for (let t = 0; t <= threshold; t += 1) below += histogram[t];
 
   const inkIsDark = below <= total - below;
+  if (thin) threshold = thinThreshold(histogram, total, threshold, inkIsDark);
   const mask = new Uint8Array(total);
   for (let i = 0; i < total; i += 1) {
     const dark = grey[i] <= threshold;
     mask[i] = (inkIsDark ? dark : !dark) ? 1 : 0;
   }
   return mask;
+}
+
+/** Whether an image is light text on a dark page, like a dark-mode capture. */
+export function isDarkPage(bitmap: Bitmap): boolean {
+  const { width, height, data } = bitmap;
+  const step = Math.max(1, Math.floor((width * height) / 40000));
+  let dark = 0;
+  let count = 0;
+  for (let i = 0; i < width * height; i += step) {
+    const p = i * 4;
+    if (luminance(data[p], data[p + 1], data[p + 2]) * (data[p + 3] / 255) + 255 * (1 - data[p + 3] / 255) < 110) dark += 1;
+    count += 1;
+  }
+  return dark > count / 2;
+}
+
+/**
+ * A threshold that keeps only pixels at least 70% covered by ink.
+ *
+ * Otsu's cut keeps edge pixels that are under half covered, which thickens
+ * every stroke. Mostly harmless, but in two common cases it is not. Light
+ * text on a dark page is rendered optically heavier to begin with, so after
+ * thresholding its strokes come out a fifth fatter than the templates. And in
+ * bold or tightly set text, fattened neighbours touch and fuse into one
+ * unreadable blob. Thin strokes read both correctly.
+ *
+ * Full coverage is taken from the strongest tenth of the ink, so grey and
+ * coloured text keep their own scale against the black.
+ */
+function thinThreshold(histogram: Uint32Array, total: number, otsu: number, inkIsDark: boolean): number {
+  const inkCount = inkIsDark
+    ? histogram.slice(0, otsu + 1).reduce((a, b) => a + b, 0)
+    : histogram.slice(otsu + 1).reduce((a, b) => a + b, 0);
+  const paperCount = total - inkCount;
+  if (inkCount === 0 || paperCount === 0) return otsu;
+
+  // The paper level: the median of the paper side.
+  let paper = inkIsDark ? 255 : 0;
+  let seen = 0;
+  for (let i = 0; i < 256; i += 1) {
+    const v = inkIsDark ? 255 - i : i;
+    seen += histogram[v];
+    if (seen >= paperCount / 2) {
+      paper = v;
+      break;
+    }
+  }
+  // Full ink: the strongest tenth of the ink side.
+  let ink = inkIsDark ? 0 : 255;
+  seen = 0;
+  for (let i = 0; i < 256; i += 1) {
+    const v = inkIsDark ? i : 255 - i;
+    seen += histogram[v];
+    if (seen >= inkCount * 0.1) {
+      ink = v;
+      break;
+    }
+  }
+  const t = Math.round(paper + (ink - paper) * 0.7);
+  // Never thicker than Otsu's own cut.
+  return inkIsDark ? Math.min(t, otsu) : Math.max(t, otsu);
 }
 
 /* ------------------------------------------------------------------ */
@@ -366,6 +428,8 @@ export interface Template {
   char: string;
   features: Features;
   aspect: number;
+  /** Height as a share of the face's cap height: a full stop is ~0.15, an x is ~0.7. */
+  height?: number;
 }
 
 export interface Match {
@@ -373,19 +437,129 @@ export interface Match {
   score: number;
 }
 
-/** Best template for one glyph, penalised for disagreeing about proportions. */
-export function classify(blob: Glyph, templates: Template[]): Match {
+/**
+ * Best template for one glyph, penalised for disagreeing about proportions
+ * and, when the height of its line is known, about size.
+ *
+ * Size matters because every glyph is stretched to the same grid before it is
+ * compared. A small screenshot's lowercase e or a is a nearly solid blob of a
+ * few pixels, which on that grid looks just like a full stop - and without
+ * knowing that the blob is half as tall as the capitals beside it, the full
+ * stop wins and "Marks" comes back as "M.rk.".
+ */
+export function classify(blob: Glyph, templates: Template[], capHeight?: number): Match {
   const vector = features(blob);
   const aspect = blob.w / blob.h;
+  const height = capHeight ? blob.h / capHeight : undefined;
   let best: Match = { char: '', score: 0 };
 
   for (const template of templates) {
     const shape = cosine(vector, template.features);
     const ratio = Math.min(aspect, template.aspect) / Math.max(aspect, template.aspect);
-    const score = shape * (0.72 + 0.28 * ratio);
+    let score = shape * (0.72 + 0.28 * ratio);
+    if (height !== undefined && template.height !== undefined) {
+      const size = Math.min(height, template.height) / Math.max(height, template.height);
+      score *= 0.6 + 0.4 * size;
+    }
     if (score > best.score) best = { char: template.char, score };
   }
   return best;
+}
+
+/**
+ * The cap height of a line, estimated from its own glyphs: the tallest one
+ * that is not an outlier. Outliers are glyphs fused with a neighbour or with a
+ * rule, which can be far taller than any letter.
+ */
+export function lineCapHeight(line: Box[]): number {
+  const heights = line.map((b) => b.h);
+  const typical = median(heights);
+  const usable = heights.filter((h) => h <= typical * 1.5);
+  return usable.length > 0 ? Math.max(...usable) : typical;
+}
+
+/** Where the line's letters stand: the usual bottom of its full-height glyphs. */
+export function lineBaseline(line: Box[], capHeight: number): number {
+  const tall = line.filter((b) => b.h >= capHeight * 0.6);
+  return median((tall.length > 0 ? tall : line).map((b) => b.y + b.h));
+}
+
+const MARKS = new Set(['.', '-', ',', ':']);
+
+/**
+ * A full stop and a hyphen are the same small blob, and a stretched grid
+ * cannot tell them apart; only where they sit can. On the baseline it is a
+ * decimal point, at mid-height a minus sign.
+ */
+export function placeMark(char: string, blob: Box, capHeight: number, baseline: number): string {
+  if (!MARKS.has(char) || blob.h > capHeight * 0.4) return char;
+  const rise = (baseline - (blob.y + blob.h / 2)) / capHeight;
+  // A comma hangs below the baseline and is taller than it is wide; a full
+  // stop is round, even when heavy rendering lets it spill a pixel low.
+  if (rise < 0.22) return blob.h > blob.w * 1.4 && blob.y + blob.h > baseline + capHeight * 0.1 ? ',' : '.';
+  if (rise < 0.75) return '-';
+  return char;
+}
+
+/** The part of a glyph between two columns, trimmed to its ink. */
+function cropGlyph(blob: Glyph, from: number, to: number): Glyph | null {
+  let minX = to;
+  let maxX = from - 1;
+  let minY = blob.h;
+  let maxY = -1;
+  for (let y = 0; y < blob.h; y += 1) {
+    for (let x = from; x < to; x += 1) {
+      if (blob.mask[y * blob.w + x] === 0) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX) return null;
+  const w = maxX - minX + 1;
+  const h = maxY - minY + 1;
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) mask[y * w + x] = blob.mask[(y + minY) * blob.w + (x + minX)];
+  }
+  return { x: blob.x + minX, y: blob.y + minY, w, h, mask };
+}
+
+/**
+ * Splits a blob that is really two touching glyphs.
+ *
+ * Bold and tightly set text fuses neighbours - "rk" in "Marks", "36" in a
+ * heavy face - into one blob that matches nothing well. A blob wider than a
+ * single glyph usually is is cut at its thinnest column, and the halves are
+ * kept only if they read better than the whole did. A genuine m or W reads
+ * well whole and is left alone.
+ */
+export function splitTouching(blob: Glyph, templates: Template[], capHeight: number, depth = 0): Glyph[] {
+  if (depth > 1 || blob.w < capHeight * 0.9 || blob.w < 6) return [blob];
+
+  const columns = new Array<number>(blob.w).fill(0);
+  for (let y = 0; y < blob.h; y += 1) {
+    for (let x = 0; x < blob.w; x += 1) columns[x] += blob.mask[y * blob.w + x];
+  }
+  let cut = -1;
+  let thinnest = Infinity;
+  for (let x = Math.floor(blob.w * 0.25); x <= Math.ceil(blob.w * 0.75); x += 1) {
+    if (columns[x] < thinnest) {
+      thinnest = columns[x];
+      cut = x;
+    }
+  }
+  if (cut <= 0 || cut >= blob.w - 1) return [blob];
+
+  const left = cropGlyph(blob, 0, cut);
+  const right = cropGlyph(blob, cut, blob.w);
+  if (!left || !right) return [blob];
+
+  const whole = classify(blob, templates, capHeight).score;
+  const parts = (classify(left, templates, capHeight).score + classify(right, templates, capHeight).score) / 2;
+  if (parts < whole + 0.04) return [blob];
+  return [...splitTouching(left, templates, capHeight, depth + 1), ...splitTouching(right, templates, capHeight, depth + 1)];
 }
 
 /* ------------------------------------------------------------------ */
@@ -399,19 +573,23 @@ export interface Recogniser {
   numeric: Template[];
 }
 
-function readCell(cell: Glyph[], templates: Template[]): { text: string; confidence: number } {
+function readCell(cell: Glyph[], templates: Template[], capHeight: number, baseline: number): { text: string; confidence: number } {
   const breaks = new Set(wordGaps(cell));
   let text = '';
   let total = 0;
+  let count = 0;
 
   cell.forEach((blob, i) => {
     if (breaks.has(i)) text += ' ';
-    const match = classify(blob, templates);
-    text += match.char;
-    total += match.score;
+    for (const part of splitTouching(blob, templates, capHeight)) {
+      const match = classify(part, templates, capHeight);
+      text += placeMark(match.char, part, capHeight, baseline);
+      total += match.score;
+      count += 1;
+    }
   });
 
-  return { text, confidence: cell.length > 0 ? total / cell.length : 0 };
+  return { text, confidence: count > 0 ? total / count : 0 };
 }
 
 function boxOf(blobs: Glyph[]): Box {
@@ -433,19 +611,25 @@ function boxOf(blobs: Glyph[]): Box {
  * a cell turns out to sit in - a digit-only pass cannot mistake a zero for an
  * O, but it also cannot read a heading.
  */
-export function recognise(bitmap: Bitmap, recogniser: Recogniser): { lines: Token[][]; numericLines: Token[][] } {
-  const mask = binarise(bitmap);
+export function recognise(
+  bitmap: Bitmap,
+  recogniser: Recogniser,
+  options: { thin?: boolean } = {},
+): { lines: Token[][]; numericLines: Token[][] } {
+  const mask = binarise(bitmap, options.thin);
   const blobs = findGlyphs(mask, bitmap.width, bitmap.height);
   const lines = groupLines(blobs).map(mergeAccents);
 
   const read = (templates: Template[]) =>
     lines
-      .map((line) =>
-        splitCells(line).map((cell): Token => {
-          const { text, confidence } = readCell(cell, templates);
+      .map((line) => {
+        const capHeight = lineCapHeight(line);
+        const baseline = lineBaseline(line, capHeight);
+        return splitCells(line).map((cell): Token => {
+          const { text, confidence } = readCell(cell, templates, capHeight, baseline);
           return { ...boxOf(cell), text, confidence, glyphs: cell.map(({ x, y, w, h }) => ({ x, y, w, h })) };
-        }),
-      )
+        });
+      })
       .filter((line) => line.length > 0);
 
   return { lines: read(recogniser.full), numericLines: read(recogniser.numeric) };

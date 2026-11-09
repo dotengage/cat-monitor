@@ -368,27 +368,37 @@ Service workers require HTTPS (or `localhost`). On GitHub Pages that is automati
 
 ## Filling in a mock from a screenshot
 
-In **Mocks → Record a full mock**, paste a screenshot of your result table with <kbd>Ctrl</kbd>+<kbd>V</kbd> — or drop one, or choose a file — and the section numbers fill themselves in. Everything stays editable; the screenshot is a first draft, not a commitment.
+In **Mocks → Record a full mock**, paste a screenshot of your results with <kbd>Ctrl</kbd>+<kbd>V</kbd> (or drop one, or choose a file) and the scores, percentiles, attempts, correct and incorrect fill themselves in. Everything stays editable; the screenshot is a first draft, not a commitment.
+
+It reads the layouts portals actually use:
+
+- sections down the side and measures across the top, the usual table;
+- the same table turned round, with VARC, DILR, QA and Total across the top;
+- headings that wrap onto two lines (*No. of / Correct*), and section names that wrap onto three;
+- figures outside any table, like *Your Percentile 94.36* on a card above it;
+- columns it should skip (Questions, Accuracy, Rank, Time) are recognised so their numbers never land in the wrong field;
+- light or dark mode, small or large, in the usual sans-serif web fonts.
+
+**Attempted, correct and incorrect complete each other.** Give any two, by typing or from a screenshot, and the third is worked out (shown in the accent colour). Zero is a real value here: 8 attempted with 0 correct makes 8 incorrect.
 
 Nothing is uploaded. The recognition runs in the tab, on pixels that never leave the device, and it works offline.
 
-### How it reads the table
+### How it reads an image
 
-A results table is the easy end of OCR: screen-rendered sans-serif glyphs, high contrast, in a grid. That is tractable without the usual options — a cloud OCR service, which would break the promise that your data stays yours, or a multi-megabyte WASM engine, which is a long download before you can type five numbers and useless offline.
+A results screen is the easy end of OCR: screen-rendered glyphs, high contrast, mostly in a grid. That is tractable without the usual options: a cloud OCR service, which would break the promise that your data stays yours, or a multi-megabyte WASM engine, which is a long download before you can type five numbers and useless offline.
 
 So the recogniser is local and purpose-built (`src/import/`):
 
-1. **Binarise.** Otsu's method picks the threshold, rather than a fixed cutoff, because these numbers are often a mid-tone accent colour. Whichever side holds most of the image is the paper, so a dark-mode screenshot reads correctly too.
-2. **Find glyphs.** Eight-connected components, with rules, borders and specks discarded by size and aspect. Disconnected parts — the dot of an `i` — are reattached.
+1. **Binarise.** Otsu's method picks the threshold, rather than a fixed cutoff, because numbers are often a mid-tone accent colour. Whichever side holds most of the image is the paper, so a dark-mode screenshot reads correctly too. Light text on a dark page renders about a fifth heavier, so dark images are also read once with thinner strokes.
+2. **Find glyphs.** Eight-connected components, with rules, borders and specks discarded by size and aspect. Disconnected parts (the dot of an `i`) are reattached; a blob that is really two touching letters is split where it is thinnest, when the halves read better than the whole.
 3. **Group.** Into lines by vertical overlap, then into cells by gap size, measured against the line's own glyph height so the same thresholds hold at any resolution.
-4. **Match.** Each glyph is reduced to ink coverage on a 16×16 grid and compared against the same measurement taken from characters drawn into a canvas in sixteen faces and weights. Scale-free, and no font files to ship.
-5. **Assemble.** Headings and row labels are matched against a short vocabulary by edit distance, so a misread "Attemptod" still lands on *attempted*. Numeric cells are read again by a digits-only pass that cannot produce a letter at all.
+4. **Match.** Each glyph is reduced to ink coverage on a 16×16 grid and compared against the same measurement taken from characters drawn into a canvas in sixteen faces and weights. Size counts as well as shape: a small screenshot's lowercase *e* is a near-solid blob that looks like a full stop on that grid, and only its height against the capitals beside it tells them apart. Where a mark sits decides whether it is a decimal point or a minus sign.
+5. **Assemble.** Headings and labels are matched against a short vocabulary by edit distance, so a misread "Attemptod" still lands on *attempted*. Numeric cells are read again by a digits-only pass, checked against the full reading so that the tail of a label or an "NA" is never taken for a figure.
+6. **Read again, and vote.** No single size suits every screenshot, so each image is read at its own size and one to three others. Each cell takes the value most readings agree on.
 
-**It is allowed to misread, and the table still comes out right.** Two things make that true. Fuzzy vocabulary matching absorbs wrong characters in headings. And the total row is found by arithmetic rather than by its label — its numbers are the column sums of the sections above, which is independent of font, language and provider. The label "Overall" really does come back as `-eraIl` from a bold screenshot, and no threshold loose enough to accept that would be safe.
+**It is allowed to misread, and the table still comes out right.** Fuzzy matching absorbs wrong characters in headings. The total row is found by arithmetic rather than by its label: its numbers are the column sums of the sections above, whatever the font or provider. The same arithmetic repairs digits: if one reading saw a small 8 as a 0 and only 8 makes the column add up, 8 is used; a single unread cell is filled from a total that at least two readings agree on. And it is the check on the result: if a total still does not match its sections, or correct and incorrect do not make attempted, you are told which, rather than handed a plausible wrong number. A cell that cannot be read cleanly is left empty.
 
-That same arithmetic is the check on the result: if a total does not match the sections, you are told which column and by how much, rather than being handed a plausible wrong number. A cell that cannot be read cleanly is left empty — a field you still have to type is a smaller problem than a confident wrong number you do not notice.
-
-On the sample table the whole thing takes about 190 ms, template sheet included.
+Reading takes well under a second for a typical screenshot, template sheet included. Serif fonts with old-style numerals (where 1 is short and 5 drops below the line) are the weak spot; the arithmetic check flags what they get wrong.
 
 ## Themes, name and icon
 
@@ -501,7 +511,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-423 tests across 29 files. The planning engine is pure, so the scenarios are exercised directly:
+451 tests across 30 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |

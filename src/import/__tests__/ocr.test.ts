@@ -14,8 +14,10 @@ import {
   features,
   findGlyphs,
   groupLines,
+  lineCapHeight,
   mergeAccents,
   otsuThreshold,
+  placeMark,
   splitCells,
   type Bitmap,
   type Glyph,
@@ -194,5 +196,54 @@ describe('features and matching', () => {
 
   it('returns no character when there is nothing to match against', () => {
     expect(classify(glyph(0, 0, 4, 4), []).char).toBe('');
+  });
+});
+
+describe('marks and sizes', () => {
+  // Cap height 20, baseline at y = 40.
+  it('reads a small blob on the baseline as a decimal point', () => {
+    expect(placeMark('-', { x: 0, y: 36, w: 4, h: 4 }, 20, 40)).toBe('.');
+  });
+
+  it('reads the same blob at mid-height as a minus sign', () => {
+    expect(placeMark('.', { x: 0, y: 28, w: 6, h: 3 }, 20, 40)).toBe('-');
+  });
+
+  it('keeps a heavy full stop that spills a pixel low a full stop, and a hanging tail a comma', () => {
+    expect(placeMark('.', { x: 0, y: 37, w: 4, h: 5 }, 20, 40)).toBe('.');
+    expect(placeMark('.', { x: 0, y: 36, w: 3, h: 8 }, 20, 40)).toBe(',');
+  });
+
+  it('leaves full-height characters alone', () => {
+    expect(placeMark('-', { x: 0, y: 20, w: 10, h: 20 }, 20, 40)).toBe('-');
+  });
+
+  it('prefers a template of the right size: a small solid blob is not a capital', () => {
+    const blob = glyph(0, 0, 6, 6);
+    const solid = features(blob);
+    const templates = [
+      { char: 'O', features: solid, aspect: 1, height: 1 },
+      { char: '.', features: solid, aspect: 1, height: 0.3 },
+    ];
+    expect(classify(blob, templates, 20).char).toBe('.');
+    expect(classify(glyph(0, 0, 20, 20), templates, 20).char).toBe('O');
+  });
+
+  it('estimates cap height without being thrown by a fused outlier', () => {
+    expect(lineCapHeight([glyph(0, 0, 8, 20), glyph(10, 6, 8, 14), glyph(20, 0, 8, 20), glyph(30, 0, 40, 60)])).toBe(20);
+  });
+});
+
+describe('thin strokes', () => {
+  it('keeps less ink than the normal threshold on a soft-edged glyph, never more', () => {
+    // A block with a half-covered edge, as anti-aliasing produces.
+    const bitmap = canvas(40, 20, [{ x: 10, y: 5, w: 10, h: 10 }]);
+    for (let y = 5; y < 15; y += 1) {
+      const p = (y * 40 + 20) * 4;
+      bitmap.data[p] = bitmap.data[p + 1] = bitmap.data[p + 2] = 120;
+    }
+    const count = (m: Uint8Array) => m.reduce((a, b) => a + b, 0);
+    expect(count(binarise(bitmap, true))).toBeLessThan(count(binarise(bitmap)));
+    expect(count(binarise(bitmap, true))).toBeGreaterThanOrEqual(100);
   });
 });

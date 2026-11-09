@@ -1693,3 +1693,6 @@ tr.is-today td { background: var(--accent-soft); }
 .chart-legend-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
 .hbar .meter > span { transition: width 0.5s var(--ease); }
+
+/* A count the mock form worked out from the other two. */
+input.derived { color: var(--accent); font-style: italic; }

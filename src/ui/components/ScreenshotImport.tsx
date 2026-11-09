@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildRecogniser, toBitmap } from '../../import/glyphs';
-import { recognise } from '../../import/ocr';
-import { buildScoreTable, describeTable, type ScoreTable } from '../../import/scoreTable';
+import { buildRecogniser, decodeImage, pixelsAt, readingWidths } from '../../import/glyphs';
+import { isDarkPage, recognise } from '../../import/ocr';
+import { buildScoreTable, combineTables, describeTable, type ScoreTable } from '../../import/scoreTable';
 
 type Phase = { kind: 'idle' } | { kind: 'reading' } | { kind: 'done'; table: ScoreTable } | { kind: 'failed'; message: string };
 
@@ -42,17 +42,27 @@ export function ScreenshotImport({ onRead }: { onRead: (table: ScoreTable) => nu
       setPreview(URL.createObjectURL(file));
 
       try {
-        const bitmap = await toBitmap(file);
-        // Yield once so the "Reading" state paints before the work begins.
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        const { lines, numericLines } = recognise(bitmap, buildRecogniser());
-        const table = buildScoreTable(lines, numericLines);
+        const image = await decodeImage(file);
+        const recogniser = buildRecogniser();
+        const readings: (ScoreTable | null)[] = [];
+        const widths = readingWidths(image.naturalWidth);
+        // Every size with normal strokes; and for light text on a dark page,
+        // which renders heavier, the first size again with thin ones.
+        const passes = widths.map((width) => ({ width, thin: false }));
+        if (isDarkPage(pixelsAt(image, Math.min(600, image.naturalWidth)))) passes.push({ width: widths[0], thin: true });
+        for (const { width, thin } of passes) {
+          // Yield between readings so the "Reading" state paints and the tab stays responsive.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const { lines, numericLines } = recognise(pixelsAt(image, width), recogniser, { thin });
+          readings.push(buildScoreTable(lines, numericLines));
+        }
+        const table = combineTables(readings);
 
         if (!table) {
           setPhase({
             kind: 'failed',
             message:
-              'No result table was found in that image. It needs the column headings — Attempted, Correct, Score and so on — visible in the screenshot.',
+              'No scores were found in that image. Include the headings or labels (Score, Percentile, Attempted, Correct and so on) in the screenshot, along with the figures.',
           });
           return;
         }

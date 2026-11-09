@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SECTIONS, SECTION_LABELS } from '../config/catConfig';
+import { completeCounts, type Count } from '../domain/attempts';
 import { formatDate } from '../domain/date';
 import type { Mock, SectionKey, SectionScore } from '../domain/types';
 import { sortedMocks } from '../engine/derive';
@@ -226,10 +227,44 @@ function MockModal({
     DILR: { ...emptyScore, ...(mock?.sections.DILR ?? {}) },
     QA: { ...emptyScore, ...(mock?.sections.QA ?? {}) },
   });
+  // Which fields hold a value someone gave - typed or read from a screenshot -
+  // as opposed to an empty field, which is also stored as 0. And which one, if
+  // any, was worked out from the other two counts.
+  const [entered, setEntered] = useState<Record<SectionKey, string[]>>(() => {
+    const out = { VARC: [], DILR: [], QA: [] } as Record<SectionKey, string[]>;
+    for (const s of SECTIONS) {
+      const sec = mock?.sections[s];
+      if (!sec) continue;
+      out[s] = (Object.keys(emptyScore) as (keyof SectionScore)[]).filter((k) => sec[k] !== 0 || sec.attempts > 0);
+    }
+    return out;
+  });
+  const [derived, setDerived] = useState<Record<SectionKey, Count | null>>({ VARC: null, DILR: null, QA: null });
   const [setsAttempted, setSetsAttempted] = useState(mock?.dilrSetsAttempted?.toString() ?? '');
   const [setsSolved, setSetsSolved] = useState(mock?.dilrSetsSolved?.toString() ?? '');
 
   const relevantSections = kind === 'full' ? SECTIONS : [section];
+
+  /**
+   * Records new values for a section and completes attempted, correct and
+   * incorrect from whichever two are known. A field worked out earlier is
+   * cleared again if the two it came from stop being known.
+   */
+  const updateSection = (s: SectionKey, patch: Partial<SectionScore>, nowEntered: string[]) => {
+    const previous = derived[s];
+    const base = { ...sections[s], ...patch };
+    const { values, derived: next } = completeCounts(base, new Set(nowEntered));
+    const result: SectionScore = { ...base, ...values };
+    if (previous && previous !== next && !nowEntered.includes(previous)) result[previous] = 0;
+    setSections((current) => ({ ...current, [s]: result }));
+    setEntered((current) => ({ ...current, [s]: nowEntered }));
+    setDerived((current) => ({ ...current, [s]: next }));
+  };
+
+  const setField = (s: SectionKey, key: keyof SectionScore, raw: string) => {
+    const others = entered[s].filter((k) => k !== key);
+    updateSection(s, { [key]: raw.trim() === '' ? 0 : Number(raw) }, raw.trim() === '' ? others : [...others, key]);
+  };
 
   /**
    * Applies a table read from a screenshot, and reports how many fields it
@@ -243,23 +278,21 @@ function MockModal({
   const applyScreenshot = (table: ScoreTable): number => {
     let filled = 0;
 
-    setSections((current) => {
-      const next = { ...current };
-      for (const key of relevantSections) {
-        const reading = table.sections[key];
-        if (!reading) continue;
-        const merged = { ...next[key] };
-        (['score', 'percentile', 'attempts', 'correct', 'incorrect'] as (keyof SectionScore)[]).forEach((field) => {
-          const value = reading[field];
-          if (typeof value === 'number') {
-            merged[field] = value;
-            filled += 1;
-          }
-        });
-        next[key] = merged;
-      }
-      return next;
-    });
+    for (const key of relevantSections) {
+      const reading = table.sections[key];
+      if (!reading) continue;
+      const patch: Partial<SectionScore> = {};
+      const read: string[] = [];
+      (['score', 'percentile', 'attempts', 'correct', 'incorrect'] as (keyof SectionScore)[]).forEach((field) => {
+        const value = reading[field];
+        if (typeof value === 'number') {
+          patch[field] = value;
+          read.push(field);
+          filled += 1;
+        }
+      });
+      if (read.length > 0) updateSection(key, patch, [...new Set([...entered[key], ...read])]);
+    }
 
     if (kind === 'full') {
       if (typeof table.overall.score === 'number') {
@@ -359,8 +392,10 @@ function MockModal({
                 {key}
                 <input
                   type="number"
-                  value={sections[s][key] || ''}
-                  onChange={(e) => setSections({ ...sections, [s]: { ...sections[s], [key]: Number(e.target.value) } })}
+                  value={entered[s].includes(key) || derived[s] === key ? String(sections[s][key]) : sections[s][key] || ''}
+                  onChange={(e) => setField(s, key, e.target.value)}
+                  title={derived[s] === key ? 'Worked out from the other two counts' : undefined}
+                  className={derived[s] === key ? 'derived' : undefined}
                 />
               </label>
             ))}

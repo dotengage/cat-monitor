@@ -91,11 +91,14 @@ function renderGlyph(ctx: CanvasRenderingContext2D, char: string, face: string):
 
 function sheet(characters: string, ctx: CanvasRenderingContext2D): Template[] {
   const out: Template[] = [];
-  for (const char of characters) {
-    for (const face of FACES) {
+  for (const face of FACES) {
+    // Heights are stored relative to this face's own capitals, which is how a
+    // captured glyph is measured against its line.
+    const cap = renderGlyph(ctx, 'H', face)?.h ?? 34;
+    for (const char of characters) {
       const glyph = renderGlyph(ctx, char, face);
       if (!glyph) continue;
-      out.push({ char, features: features(glyph), aspect: glyph.w / glyph.h });
+      out.push({ char, features: features(glyph), aspect: glyph.w / glyph.h, height: glyph.h / cap });
     }
   }
   return out;
@@ -118,8 +121,10 @@ export function buildRecogniser(): Recogniser {
   return cached;
 }
 
-/** Decodes a pasted or dropped file into raw pixels. */
-export async function toBitmap(file: File | Blob): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
+type Pixels = { width: number; height: number; data: Uint8ClampedArray };
+
+/** Decodes a pasted or dropped file into an image. */
+export async function decodeImage(file: File | Blob): Promise<HTMLImageElement> {
   const url = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -128,31 +133,46 @@ export async function toBitmap(file: File | Blob): Promise<{ width: number; heig
       img.onerror = () => reject(new Error('That file could not be read as an image.'));
       img.src = url;
     });
-
-    /*
-     * Only genuinely small screenshots are scaled up.
-     *
-     * Enlarging helps when glyphs are so small that a 16x16 feature grid has
-     * more cells than the glyph has pixels. Past that it hurts: interpolation
-     * softens the strokes, thresholding thickens them back up, and adjacent
-     * letters and neighbouring lines start to run together. Measured on a real
-     * table, reading at native size beat every upscale that was tried.
-     */
-    const scale = Math.min(3, Math.max(1, 900 / Math.max(1, image.naturalWidth)));
-    const width = Math.round(image.naturalWidth * scale);
-    const height = Math.round(image.naturalHeight * scale);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) throw new Error('This browser would not provide a canvas to read the image with.');
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(image, 0, 0, width, height);
-
-    const { data } = ctx.getImageData(0, 0, width, height);
-    return { width, height, data };
+    return image;
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** An image's pixels, drawn at a given width. */
+export function pixelsAt(image: HTMLImageElement, width: number): Pixels {
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round((image.naturalHeight * w) / Math.max(1, image.naturalWidth)));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('This browser would not provide a canvas to read the image with.');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, w, h);
+  return { width: w, height: h, data: ctx.getImageData(0, 0, w, h).data };
+}
+
+/**
+ * The widths worth reading an image at.
+ *
+ * No single size suits every screenshot. Glyphs a few pixels tall need
+ * enlarging before a 16x16 grid can describe them, but enlarging softens
+ * strokes that were already crisp, and a 4K capture is slow to read at full
+ * size for no gain. So an image is read at its own size and at one or two
+ * others, and whichever reading makes the most sense is kept.
+ */
+export function readingWidths(natural: number): number[] {
+  const widths = [Math.min(3, Math.max(1, 900 / Math.max(1, natural))) * natural];
+  if (natural <= 2400) widths.push(natural);
+  if (natural < 800) widths.push(natural * 2);
+  if (natural < 600) widths.push(natural * 3);
+  if (natural > 1800) widths.push(1400);
+  return [...new Set(widths.map((w) => Math.round(w)))].slice(0, 4);
+}
+
+/** Decodes a pasted or dropped file into raw pixels, optionally at a chosen width. */
+export async function toBitmap(file: File | Blob, targetWidth?: number): Promise<Pixels> {
+  const image = await decodeImage(file);
+  return pixelsAt(image, targetWidth ?? readingWidths(image.naturalWidth)[0]);
 }

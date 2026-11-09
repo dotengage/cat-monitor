@@ -11,12 +11,16 @@ import { describe, expect, it } from 'vitest';
 import type { Token } from '../ocr';
 import {
   buildScoreTable,
+  cellNumber,
+  combineTables,
   editDistance,
+  looksNumeric,
   matchColumn,
   matchRow,
   normalise,
   parseNumber,
   similarity,
+  type ScoreTable,
 } from '../scoreTable';
 
 function token(text: string, x: number, y: number, w = 60, h = 16): Token {
@@ -256,5 +260,168 @@ describe('buildScoreTable', () => {
   it('returns nothing when the image is not a result table', () => {
     const lines = [[token('Your dashboard', 10, 10, 120)], [token('Welcome back', 10, 40, 110)]];
     expect(buildScoreTable(lines, lines)).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Layouts beyond the IMS table                                        */
+/* ------------------------------------------------------------------ */
+
+/** A token centred at `cx`. */
+const at = (text: string, cx: number, y: number, w = 40) => token(text, cx - w / 2, y, w);
+
+/**
+ * The geometry of a real screenshot that the first version could not read:
+ * "No. of / Correct" wraps over two lines, a Questions column sits between
+ * the ones we want, and every section label wraps onto two or three lines.
+ */
+function wrappedTable(): Token[][] {
+  return [
+    [at('.', 541, 78, 4), at('No. of', 808, 78, 56)],
+    [at('Marks', 391, 95, 54), at('Questions', 530, 95, 90), at('Attempts', 668, 95, 80)],
+    [at('Correct', 807, 112, 66)],
+    [at('Overall', 157, 228, 70), at('22', 406, 229, 22), at('66', 544, 229, 22), at('33', 682, 229, 22), at('11', 822, 229, 22)],
+    [at('Verbal Ability &', 204, 322, 150), at('14', 406, 323, 22), at('24', 545, 323, 22), at('17', 683, 323, 22), at('7', 821, 323, 12)],
+    [at('Reading', 164, 356, 70)],
+    [at('Comprehension', 205, 390, 140)],
+    [at('Data Interpretation', 226, 474, 180), at('-2', 405, 474, 22), at('20', 544, 474, 22), at('8', 683, 474, 12), at('0', 821, 474, 12)],
+    [at('& Logical', 168, 507, 90)],
+    [at('Reasoning', 176, 542, 90)],
+    [at('Quantitative Ability', 225, 624, 180), at('10', 406, 625, 22), at('22', 544, 625, 22), at('8', 683, 625, 12), at('4', 821, 625, 12)],
+  ];
+}
+
+describe('more layouts', () => {
+  it('reads a heading that wraps onto two lines, and ignores a Questions column', () => {
+    const lines = wrappedTable();
+    const table = buildScoreTable(lines, lines)!;
+    expect(table.sections.VARC).toEqual({ score: 14, attempts: 17, correct: 7 });
+    expect(table.sections.DILR).toEqual({ score: -2, attempts: 8, correct: 0 });
+    expect(table.sections.QA).toEqual({ score: 10, attempts: 8, correct: 4 });
+    expect(table.overall).toEqual({ score: 22, attempts: 33, correct: 11 });
+    expect(table.columns).toEqual(['score', 'questions', 'attempts', 'correct']);
+    expect(table.warnings).toEqual([]);
+  });
+
+  it('places a section whose label wraps, from the label lines around its figures', () => {
+    const lines = wrappedTable();
+    // Only the last word of "Verbal Ability &" survives on the figures line.
+    lines[4][0].text = '&';
+    const table = buildScoreTable(lines, lines)!;
+    expect(table.sections.VARC?.attempts).toBe(17);
+  });
+
+  it('reads the table turned round, sections across the top', () => {
+    const lines = [
+      [at('VARC', 380, 20), at('DILR', 520, 20), at('QA', 660, 20), at('Total', 800, 20)],
+      [at('Score', 60, 60, 60), at('36', 380, 60), at('16', 520, 60), at('25', 660, 60), at('77', 800, 60)],
+      [at('Percentile', 60, 100, 90), at('91.23', 380, 100), at('78.5', 520, 100), at('85.04', 660, 100), at('93.67', 800, 100)],
+    ];
+    const table = buildScoreTable(lines, lines)!;
+    expect(table.sections.VARC).toEqual({ score: 36, percentile: 91.23 });
+    expect(table.sections.DILR).toEqual({ score: 16, percentile: 78.5 });
+    expect(table.overall).toEqual({ score: 77, percentile: 93.67 });
+  });
+
+  it('finds an overall percentile shown on a card outside the table', () => {
+    const lines = [
+      [at('Your Score', 60, 40, 100), at('77', 160, 40, 22), at('Your Percentile', 300, 40, 140), at('94.36', 420, 40, 50)],
+      [at('Section', 60, 120, 70), at('Score', 400, 120, 56), at('Attempts', 560, 120, 80)],
+      [at('VARC', 60, 160), at('36', 400, 160), at('20', 560, 160)],
+      [at('DILR', 60, 200), at('16', 400, 200), at('12', 560, 200)],
+    ];
+    const table = buildScoreTable(lines, lines)!;
+    expect(table.overall).toEqual({ score: 77, percentile: 94.36 });
+    expect(table.sections.VARC).toEqual({ score: 36, attempts: 20 });
+  });
+
+  it('does not take the tail of a label for its figure', () => {
+    // "Your Percentile" read as "Your Percentl le": the digits-only pass reads "le" as "80".
+    const full = [[token('Your Percentl le', 30, 40, 120), token('94.36', 200, 40, 50)]];
+    const digits = [[token('7006 00600018 80', 30, 40, 120), token('94.36', 200, 40, 50)]];
+    const table = buildScoreTable(full, digits)!;
+    expect(table.overall.percentile).toBe(94.36);
+  });
+
+  it('places a section whose label could not be read, when it is the one row left', () => {
+    const lines = [
+      [at('Subject', 60, 20, 70), at('Score', 300, 20, 56), at('Correct', 420, 20, 66)],
+      [at('VARC', 60, 60), at('36', 300, 60), at('14', 420, 60)],
+      [at('DILR', 60, 100), at('16', 300, 100), at('7', 420, 100)],
+      // "QA" fused into one blob.
+      [at('M', 60, 140, 14), at('25', 300, 140), at('10', 420, 140)],
+      [at('Total', 60, 180), at('77', 300, 180), at('31', 420, 180)],
+    ];
+    const table = buildScoreTable(lines, lines)!;
+    expect(table.sections.QA).toEqual({ score: 25, correct: 10 });
+    expect(table.overall).toEqual({ score: 77, correct: 31 });
+  });
+
+  it('drops a % sign the digits-only pass read as a digit', () => {
+    expect(cellNumber('92.47%', '92.478')).toBe(92.47);
+    expect(cellNumber('92.47 %ile', '92.47 8100')).toBe(92.47);
+    expect(cellNumber('NA', '44')).toBeUndefined();
+  });
+
+  it('tells a number misread as letters from text that never was one', () => {
+    expect(looksNumeric('2o')).toBe(true);
+    expect(looksNumeric('7s.s')).toBe(true);
+    expect(looksNumeric('le')).toBe(false);
+    expect(looksNumeric('—')).toBe(false);
+  });
+});
+
+describe('matchColumn on more headings', () => {
+  it('knows the label column for what it is', () => {
+    expect(matchColumn('Section')).toBeNull();
+    expect(matchColumn('SectIon')).toBeNull();
+    expect(matchColumn('Subject')).toBeNull();
+  });
+
+  it('recognises headings that only identify a column to skip', () => {
+    expect(matchColumn('Questions')).toBe('questions');
+    expect(matchColumn('Total Questions')).toBe('questions');
+    expect(matchColumn('Accuracy')).toBe('accuracy');
+  });
+
+  it('prefers the whole heading over one of its words', () => {
+    expect(matchColumn('Not Attempted')).toBe('skipped');
+    expect(matchColumn('Questions Attempted')).toBe('attempts');
+    expect(matchColumn('No. of Correct')).toBe('correct');
+    expect(matchColumn('No. of Incorrect')).toBe('incorrect');
+    expect(matchColumn('%ile')).toBe('percentile');
+  });
+});
+
+describe('combineTables', () => {
+  const reading = (dilrAttempts: number | undefined, overall = 33): ScoreTable =>
+    buildScoreTable(
+      [
+        [at('Section', 60, 20, 70), at('Score', 300, 20, 56), at('Attempts', 420, 20, 80)],
+        [at('VARC', 60, 60), at('14', 300, 60), at('17', 420, 60)],
+        [at('DILR', 60, 100), at('-2', 300, 100), ...(dilrAttempts === undefined ? [] : [at(String(dilrAttempts), 420, 100)])],
+        [at('QA', 60, 140), at('10', 300, 140), at('8', 420, 140)],
+        [at('Overall', 60, 180), at('22', 300, 180), at(String(overall), 420, 180)],
+      ],
+      [],
+    )!;
+
+  it('takes the value most readings agree on', () => {
+    expect(combineTables([reading(8), reading(0), reading(8)])!.sections.DILR?.attempts).toBe(8);
+  });
+
+  it('uses the arithmetic to choose between two readings that disagree', () => {
+    // One reading saw the small 8 as a 0; only 8 makes the column add up to 33.
+    const combined = combineTables([reading(0), reading(8)])!;
+    expect(combined.sections.DILR?.attempts).toBe(8);
+    expect(combined.warnings).toEqual([]);
+  });
+
+  it('fills a lone unread cell from a total that readings agree on', () => {
+    expect(combineTables([reading(undefined), reading(undefined)])!.sections.DILR?.attempts).toBe(8);
+  });
+
+  it('does not trust a total only one reading saw', () => {
+    expect(combineTables([reading(undefined), reading(undefined, 40)])!.sections.DILR?.attempts).toBeUndefined();
   });
 });
