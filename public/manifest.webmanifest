@@ -1,6 +1,6 @@
 {
-  "name": "CAT Monitor — Adaptive CAT 2026 Planner",
-  "short_name": "CAT Monitor",
+  "name": "CAT Adaptive Tracker",
+  "short_name": "CAT Tracker",
   "description": "Adaptive personal planning system for CAT 2026. Local-first, offline-capable exam execution engine.",
   "start_url": "./",
   "scope": "./",

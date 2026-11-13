@@ -147,7 +147,7 @@ describe('buildAnalyticsReport', () => {
 
 describe('reportFilename', () => {
   it('names files so they sort by date', () => {
-    expect(reportFilename('mock', TODAY)).toBe('cat-monitor-mock-report-2026-09-03.pdf');
-    expect(reportFilename('analytics', TODAY)).toBe('cat-monitor-analytics-report-2026-09-03.pdf');
+    expect(reportFilename('mock', TODAY)).toBe('cat-adaptive-tracker-mock-report-2026-09-03.pdf');
+    expect(reportFilename('analytics', TODAY)).toBe('cat-adaptive-tracker-analytics-report-2026-09-03.pdf');
   });
 });

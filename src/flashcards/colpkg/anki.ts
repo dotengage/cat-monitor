@@ -694,7 +694,7 @@ function basicModel(did: number, mod: number) {
   const field = (name: string, ord: number) => ({ name, ord, sticky: false, rtl: false, font: 'Arial', size: 20, media: [] });
   return {
     id: MODEL_ID,
-    name: 'Basic (CAT Monitor)',
+    name: 'Basic (CAT Adaptive Tracker)',
     type: 0,
     mod,
     usn: -1,

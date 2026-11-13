@@ -1,4 +1,4 @@
-/* CAT Monitor service worker.
+/* CAT Adaptive Tracker service worker.
    Dependency-free: precaches the shell, then caches build assets on demand.
    All user data lives in IndexedDB, never in the cache. */
 

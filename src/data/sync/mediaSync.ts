@@ -22,7 +22,7 @@ import { request, type GistPayload, type MediaSyncMeta } from './gistClient';
 const FILES_PER_GIST = 250;
 /** Keeps each upload request comfortably small. */
 const BATCH_BYTES = 3_000_000;
-const MEDIA_DESCRIPTION = 'CAT Monitor — flashcard images (do not edit by hand)';
+const MEDIA_DESCRIPTION = 'CAT Adaptive Tracker — flashcard images (do not edit by hand)';
 
 
 /** Images the current cards actually use. Orphans are neither uploaded nor fetched. */

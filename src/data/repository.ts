@@ -58,7 +58,7 @@ export class LocalStateRepository implements StateRepository {
     const parsed = JSON.parse(json) as { state?: AppState } & Partial<AppState>;
     const candidate = (parsed.state ?? parsed) as AppState;
     if (!candidate || typeof candidate !== 'object' || !('profile' in candidate) || !('tasks' in candidate)) {
-      throw new Error('This file does not look like a CAT Monitor backup.');
+      throw new Error('This file does not look like a CAT Adaptive Tracker backup.');
     }
     const state = migrate(candidate);
     // Never overwrite silently: snapshot what is there before replacing it.

@@ -18,7 +18,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('CAT Monitor crashed', error, info.componentStack);
+    console.error('CAT Adaptive Tracker crashed', error, info.componentStack);
   }
 
   private async download() {
@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
       const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `cat-monitor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `cat-adaptive-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

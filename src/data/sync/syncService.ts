@@ -296,7 +296,7 @@ export async function syncOnce(config: SyncConfig, local: AppState): Promise<Syn
       gistId = candidates[0];
     } else if (candidates.length > 1) {
       throw new GistError(
-        'This account holds several CAT Monitor datasets and this device is not attached to one. Disconnect and reconnect, then pick the right space.',
+        'This account holds several CAT Adaptive Tracker datasets and this device is not attached to one. Disconnect and reconnect, then pick the right space.',
       );
     }
   }

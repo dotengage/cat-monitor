@@ -54,7 +54,7 @@ export async function downloadCollection(state: AppState): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `cat-monitor-flashcards-${new Date().toISOString().slice(0, 10)}.colpkg`;
+  a.download = `cat-adaptive-tracker-flashcards-${new Date().toISOString().slice(0, 10)}.colpkg`;
   document.body.appendChild(a);
   a.click();
   a.remove();

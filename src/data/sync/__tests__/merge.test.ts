@@ -272,7 +272,7 @@ describe('remote data written by an older build', () => {
     const { state } = mergeStates(createInitialState(), staleRemote());
     const safe = migrate(state);
 
-    expect(safe.settings.brand.name).toBe('CAT Monitor');
+    expect(safe.settings.brand.name).toBe('CAT Adaptive Tracker');
     expect(safe.settings.brand.glyph).toBe('C');
     // Everything else the newer remote decided is still honoured.
     expect(safe.settings.updatedAt).toBe('2099-01-01T00:00:00.000Z');

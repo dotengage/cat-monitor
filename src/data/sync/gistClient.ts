@@ -11,7 +11,7 @@ import { migrate } from '../migrate';
 
 const API = 'https://api.github.com';
 const DATA_FILENAME = 'cat-monitor-data.json';
-const GIST_DESCRIPTION = 'CAT Monitor — synced data (do not edit by hand)';
+const GIST_DESCRIPTION = 'CAT Adaptive Tracker — synced data (do not edit by hand)';
 
 export class GistError extends Error {
   readonly status?: number;
@@ -122,7 +122,7 @@ export async function verifyToken(token: string): Promise<void> {
 }
 
 /**
- * Every CAT Monitor dataset in this account.
+ * Every CAT Adaptive Tracker dataset in this account.
  *
  * Deliberately returns all of them rather than the first match: one GitHub
  * account can legitimately hold more than one dataset, and silently joining
@@ -198,7 +198,7 @@ export async function readDataGist(token: string, gistId: string): Promise<SyncE
   try {
     const parsed = JSON.parse(content) as SyncEnvelope;
     if (parsed?.app !== 'cat-monitor' || !parsed.state) {
-      throw new GistError('The sync file does not look like CAT Monitor data.');
+      throw new GistError('The sync file does not look like CAT Adaptive Tracker data.');
     }
     /*
      * Normalise before anything downstream touches it.

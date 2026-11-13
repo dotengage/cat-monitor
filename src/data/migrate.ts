@@ -1,5 +1,5 @@
 import { DEFAULT_PLANNING, STATE_VERSION } from '../config/catConfig';
-import { isThemeName } from '../config/themes';
+import { DEFAULT_BRAND_NAME, FORMER_BRAND_NAME, isThemeName } from '../config/themes';
 import { DEFAULT_DECK_OPTIONS } from '../flashcards/scheduler';
 import type { AppState } from '../domain/types';
 import { createInitialState } from './defaultState';
@@ -50,6 +50,12 @@ export function migrate(raw: Partial<AppState>): AppState {
     dismissedInsights: raw.dismissedInsights ?? [],
     deletedIds: raw.deletedIds ?? {},
   };
+
+  // The app was renamed; data still on the old default name follows it. A
+  // name someone picked themselves is theirs and stays.
+  if (state.settings.brand.name === FORMER_BRAND_NAME) {
+    state.settings = { ...state.settings, brand: { ...state.settings.brand, name: DEFAULT_BRAND_NAME } };
+  }
 
   // v2 made light the default theme. Only nudge users who never chose one.
   if ((raw.version ?? 1) < 2 && (raw.settings?.theme ?? 'system') === 'system') {

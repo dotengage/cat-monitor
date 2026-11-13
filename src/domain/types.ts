@@ -707,4 +707,9 @@ export interface AppState {
    * because the other device still holds the record. Pruned after 90 days.
    */
   deletedIds: Record<string, string>;
+  /**
+   * Set on the sample data offered at first run. Never synced: sample data
+   * must not reach anyone's GitHub account, nor mix with real data there.
+   */
+  demo?: boolean;
 }

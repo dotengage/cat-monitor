@@ -119,7 +119,7 @@ export class PdfDoc {
   private y = PAGE_H - MARGIN;
   private readonly footer: string;
 
-  constructor(footer = 'CAT Monitor') {
+  constructor(footer = 'CAT Adaptive Tracker') {
     this.footer = toAscii(footer);
   }
 

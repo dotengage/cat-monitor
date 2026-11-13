@@ -116,7 +116,7 @@ function writeForecastBlocks(doc: PdfDoc, f: Forecast) {
 /* ------------------------------------------------------------------ */
 
 export function buildMockReport(state: AppState, today: ISODate): PdfDoc {
-  const doc = new PdfDoc('CAT Monitor - Mock report');
+  const doc = new PdfDoc('CAT Adaptive Tracker - Mock report');
   const forecast = calculateForecast(state, today);
   const mocks = sortedMocks(state);
   const full = fullMocks(state);
@@ -210,7 +210,7 @@ export function buildMockReport(state: AppState, today: ISODate): PdfDoc {
 /* ------------------------------------------------------------------ */
 
 export function buildAnalyticsReport(state: AppState, today: ISODate): PdfDoc {
-  const doc = new PdfDoc('CAT Monitor - Analytics report');
+  const doc = new PdfDoc('CAT Adaptive Tracker - Analytics report');
   const feasibility = calculateFeasibility(state, today);
   const workload = feasibility.workload;
   const habits = calculateHabitStats(state, today);
@@ -470,7 +470,7 @@ function cell(entry: { minutes: number; topics: string }): string {
 
 /** Filename that sorts chronologically and says what it is. */
 export function reportFilename(kind: 'mock' | 'analytics', today: ISODate): string {
-  return `cat-monitor-${kind}-report-${today}.pdf`;
+  return `cat-adaptive-tracker-${kind}-report-${today}.pdf`;
 }
 
 export function sectionLabel(section: SectionKey): string {

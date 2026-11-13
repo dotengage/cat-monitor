@@ -59,7 +59,9 @@ export function isThemeName(value: unknown): value is ThemeName {
 /* Brand                                                               */
 /* ------------------------------------------------------------------ */
 
-export const DEFAULT_BRAND_NAME = 'CAT Monitor';
+/** The name the app shipped with before, still found in older saved data. */
+export const FORMER_BRAND_NAME = 'CAT Monitor';
+export const DEFAULT_BRAND_NAME = 'CAT Adaptive Tracker';
 export const DEFAULT_BRAND_GLYPH = 'C';
 
 /** Uploaded marks are squashed to this many pixels square before storing. */

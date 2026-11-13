@@ -13,6 +13,15 @@ import { Callout, Field, Modal } from './index';
  * first one found is how two people's data ends up merged.
  */
 export function SyncSetup({ onDone }: { onDone?: () => void }) {
+  const { state } = useStore();
+  // Sample data never syncs; there is nothing to set up until it is replaced.
+  if (state.demo) {
+    return <Callout>Sync is off while you are looking at sample data. Start your own plan to turn it on.</Callout>;
+  }
+  return <SyncSetupForm onDone={onDone} />;
+}
+
+function SyncSetupForm({ onDone }: { onDone?: () => void }) {
   const { sync, discoverSpaces, connectToSpace, renameSpace, deleteSpace } = useStore();
   const [token, setToken] = useState('');
   const [spaces, setSpaces] = useState<SpaceSummary[] | null>(null);
@@ -88,7 +97,7 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
       {spaces.length > 0 ? (
         <>
           <Callout tone="warn">
-            This GitHub account already holds {spaces.length === 1 ? 'a CAT Monitor dataset' : `${spaces.length} CAT Monitor datasets`}.
+            This GitHub account already holds {spaces.length === 1 ? 'a CAT Adaptive Tracker dataset' : `${spaces.length} CAT Adaptive Tracker datasets`}.
             Join one only if it is <strong>yours</strong> — joining someone else's merges the two sets of data together.
           </Callout>
           <div className="section-label">Existing data in this account</div>
@@ -128,7 +137,7 @@ export function SyncSetup({ onDone }: { onDone?: () => void }) {
           </div>
         </>
       ) : (
-        <Callout tone="ok">No CAT Monitor data found in this account yet. A new, private space will be created.</Callout>
+        <Callout tone="ok">No CAT Adaptive Tracker data found in this account yet. A new, private space will be created.</Callout>
       )}
 
       <div className="section-label">{spaces.length > 0 ? 'Or start a completely separate space' : 'Name your space'}</div>

@@ -16,6 +16,7 @@ import type {
   TimeWindow,
   UserProfile,
 } from '../domain/types';
+import { buildSampleState } from '../data/sampleState';
 import { useStore } from '../state/store';
 import { Callout, Card, ChoiceGroup, Field } from '../ui/components';
 import { SyncSetup } from '../ui/components/SyncSetup';
@@ -554,6 +555,19 @@ export function Onboarding() {
             The first week is generated at roughly 75% of your realistic capacity, with 3-5 outcomes rather than a full
             timetable. You will not be shown the entire {daysLeft}-day schedule, because it would be fiction.
           </Callout>
+        </Card>
+      )}
+
+      {step === 0 && (
+        <Card title="Just looking around?">
+          <p className="small muted">
+            Load twelve weeks of sample preparation - mocks, a forecast, weekly plans and reviews, analytics, habits and
+            flashcard decks - to see everything working before you set up your own. It stays on this device, and one
+            click clears it.
+          </p>
+          <button type="button" className="btn primary" onClick={() => dispatch({ type: 'replace', state: buildSampleState(today) })}>
+            Load sample data
+          </button>
         </Card>
       )}
 

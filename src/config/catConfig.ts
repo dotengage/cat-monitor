@@ -15,7 +15,7 @@ import type {
   TimeWindow,
 } from '../domain/types';
 
-export const APP_NAME = 'CAT Monitor';
+export const APP_NAME = 'CAT Adaptive Tracker';
 export const STATE_VERSION = 2;
 
 /** Defaults used the first time the app is opened. Editable in Settings. */

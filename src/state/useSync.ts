@@ -71,7 +71,9 @@ export function useSync(
   const run = useCallback(
     async (reason: 'manual' | 'auto') => {
       const current = configRef.current;
-      if (!current || runningRef.current) return;
+      // Sample data stays on this device: it must never reach a GitHub
+      // account, nor be merged into the real data already there.
+      if (!current || runningRef.current || stateRef.current.demo) return;
       runningRef.current = true;
       setSync((s) => ({ ...s, phase: 'syncing', error: undefined }));
 
@@ -148,6 +150,11 @@ export function useSync(
   }, []);
 
   const joinSpace = useCallback(async (token: string, target: SpaceTarget) => {
+    if (stateRef.current.demo) {
+      const message = 'Sample data is loaded. Start your own plan first, then turn on sync.';
+      setSync((s) => ({ ...s, error: message }));
+      throw new Error(message);
+    }
     setSync((s) => ({ ...s, phase: 'syncing', error: undefined }));
     try {
       const { config: next, joined } = await connectToSpace(token, target, stateRef.current);

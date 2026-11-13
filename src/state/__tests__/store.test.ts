@@ -353,7 +353,7 @@ describe('persistence shape', () => {
     delete (legacy.settings as Partial<AppState['settings']>).brand;
 
     const migrated = migrate(legacy);
-    expect(migrated.settings.brand.name).toBe('CAT Monitor');
+    expect(migrated.settings.brand.name).toBe('CAT Adaptive Tracker');
     expect(migrated.settings.brand.glyph).toBe('C');
     expect(migrated.settings.brand.image).toBeUndefined();
   });

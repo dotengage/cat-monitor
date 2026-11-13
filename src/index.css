@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-   CAT Monitor — design system.
+   CAT Adaptive Tracker — design system.
 
    Calm, quiet, modern. Generous whitespace, soft surfaces, one accent,
    and motion that is felt rather than watched. This is an exam execution
@@ -1696,3 +1696,18 @@ tr.is-today td { background: var(--accent-soft); }
 
 /* A count the mock form worked out from the other two. */
 input.derived { color: var(--accent); font-style: italic; }
+
+/* The sample-data notice at the top of every page. */
+.sample-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  font-size: 0.86rem;
+}

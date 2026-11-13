@@ -9,6 +9,7 @@ import { Home } from './pages/Home';
 import { Log } from './pages/Log';
 import { Mocks } from './pages/Mocks';
 import { Onboarding } from './pages/Onboarding';
+import { SampleBanner } from './ui/components/SampleBanner';
 import { Review } from './pages/Review';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
@@ -92,6 +93,7 @@ function Router() {
       target={state.profile.targetPercentile}
       brand={state.settings.brand}
     >
+      {state.demo && <SampleBanner />}
       {route === 'home' && <Home navigate={navigate} />}
       {route === 'today' && <Today navigate={navigate} />}
       {route === 'week' && <Week />}

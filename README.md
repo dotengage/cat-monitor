@@ -1,6 +1,8 @@
-# CAT Monitor
+# CAT Adaptive Tracker
 
 An adaptive personal planning system for CAT 2026. Local-first, offline-capable, no account, no server.
+
+**Try it:** open [the app](https://dotengage.github.io/cat-monitor/) and choose **Load sample data** on the first screen. You get twelve weeks of a plausible preparation, with mocks, the forecast, weekly plans and reviews, analytics, habits and three flashcard decks, so every screen can be seen working before you set up your own. A banner marks it as sample data on every page, it is never synced, and **Start my own plan** clears it.
 
 This is not a timetable generator, a habit tracker, or a productivity app. It exists to answer one question, continuously:
 
@@ -20,6 +22,7 @@ It optimises for exam readiness — mock performance, section balance, question 
 - [The daily log and streaks](#the-daily-log-and-streaks)
 - [How the CAT tracker works](#how-the-cat-tracker-works)
 - [Flashcards](#flashcards)
+- [Sample data](#sample-data)
 - [How weekly recalculation works](#how-weekly-recalculation-works)
 - [Local development](#local-development)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
@@ -34,6 +37,12 @@ It optimises for exam readiness — mock performance, section balance, question 
 - [Known limits and future work](#known-limits-and-future-work)
 
 ---
+
+## Sample data
+
+The sample (`src/data/sampleState.ts`) is not written out by hand. It is built by running the app's own actions through its own reducer, week by week: onboarding, then each week's mocks, practice, study log and habits, the planned tasks resolved (most done, some partly, a few missed), and a weekly review, which plans the next week exactly as it would for a real user. The flashcard decks are studied day by day through the real scheduler, the way the study screen runs a session. So every number on every screen is one the app itself produced. Randomness is seeded, and cards have fixed ids (the scheduler seeds its interval fuzz from them), so the sample is identical every time it is loaded.
+
+Sample data carries a `demo` flag. Sync will not run while it is set, and the sync setup says so instead of asking for a token: sample data must never reach a GitHub account or mix with real data there.
 
 ## What it does
 
@@ -402,6 +411,8 @@ Reading takes well under a second for a typical screenshot, template sheet inclu
 
 ## Themes, name and icon
 
+The app is called **CAT Adaptive Tracker** (it was CAT Monitor). Saved data still on the old default name takes the new one when it loads; a name you chose yourself is left alone. The repository, the web address, and the `cat-monitor` keys under which data is stored and synced keep the old name on purpose: changing them would strand everyone's existing data.
+
 **Settings → Theme** offers ten palettes: System, Light, six pastels (Mint, Lavender, Blush, Apricot, Sky, Sand) and two darks (Dark, Midnight).
 
 Nothing in the interface hard-codes a colour. Buttons, pills, meters, charts and the PDF-free parts of the UI all read the same CSS custom properties, so a palette is a block of tokens in `src/index.css` against `:root[data-theme='<id>']` plus one entry in `src/config/themes.ts` — the picker builds itself from that list.
@@ -511,7 +522,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-451 tests across 30 files. The planning engine is pure, so the scenarios are exercised directly:
+460 tests across 31 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |

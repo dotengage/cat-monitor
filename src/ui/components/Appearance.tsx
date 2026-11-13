@@ -128,7 +128,7 @@ export function BrandEditor({ brand, onChange }: { brand: Brand; onChange: (patc
               type="text"
               maxLength={28}
               value={brand.name}
-              placeholder="CAT Monitor"
+              placeholder="CAT Adaptive Tracker"
               onChange={(e) => onChange({ name: e.target.value })}
             />
           </Field>
