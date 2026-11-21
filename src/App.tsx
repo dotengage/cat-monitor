@@ -69,19 +69,63 @@ function ThemeSync() {
   return null;
 }
 
+const LOCKED_VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+const FREE_VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover';
+
+/**
+ * Zoom is locked on phones, because an app that drifts in and out of zoom
+ * while you tap and type stops feeling like an app - except on Flashcards,
+ * where pinching in on a small screenshot is often the only way to read it.
+ *
+ * Android honours the viewport tag. iOS Safari ignores it for pinching, so
+ * there the pinch gesture itself is cancelled. Double-tap zoom is off
+ * everywhere (in the stylesheet), so quick taps on the study buttons never
+ * zoom either.
+ */
+function ZoomPolicy({ allow }: { allow: boolean }) {
+  useEffect(() => {
+    document.querySelector('meta[name="viewport"]')?.setAttribute('content', allow ? FREE_VIEWPORT : LOCKED_VIEWPORT);
+    if (allow) return;
+
+    const cancel = (e: Event) => e.preventDefault();
+    const pinch = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    const options: AddEventListenerOptions = { passive: false };
+    document.addEventListener('gesturestart', cancel, options);
+    document.addEventListener('gesturechange', cancel, options);
+    document.addEventListener('touchmove', pinch, options);
+    return () => {
+      document.removeEventListener('gesturestart', cancel, options);
+      document.removeEventListener('gesturechange', cancel, options);
+      document.removeEventListener('touchmove', pinch, options);
+    };
+  }, [allow]);
+  return null;
+}
+
 function Router() {
   const { state, loading, today } = useStore();
   const [route, navigate] = useRoute();
+  const zoom = <ZoomPolicy allow={state.profile.onboarded && !loading && route === 'flashcards'} />;
 
   if (loading) {
     return (
       <div className="main">
+        {zoom}
         <div className="empty">Loading your data…</div>
       </div>
     );
   }
 
-  if (!state.profile.onboarded) return <Onboarding />;
+  if (!state.profile.onboarded) {
+    return (
+      <>
+        {zoom}
+        <Onboarding />
+      </>
+    );
+  }
 
   const daysRemaining = Math.max(0, daysBetween(today, state.profile.examDate));
 
@@ -93,6 +137,7 @@ function Router() {
       target={state.profile.targetPercentile}
       brand={state.settings.brand}
     >
+      {zoom}
       {state.demo && <SampleBanner />}
       {route === 'home' && <Home navigate={navigate} />}
       {route === 'today' && <Today navigate={navigate} />}

@@ -274,6 +274,13 @@ body,
   height: 100%;
 }
 
+/* No double-tap zoom: a tap is a tap. Scrolling is unaffected. */
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -1175,6 +1182,20 @@ textarea:focus {
 }
 
 textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
+
+/*
+ * Phones zoom into any field whose text is under 16px the moment it is
+ * focused, and do not zoom back out. On touch screens every field is 16px,
+ * so typing never moves the page. Desktop keeps the denser size.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  [contenteditable] {
+    font-size: 16px !important;
+  }
+}
 input:disabled, select:disabled, textarea:disabled { opacity: 0.55; }
 input::placeholder, textarea::placeholder { color: var(--text-faint); }
 
