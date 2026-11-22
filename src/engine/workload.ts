@@ -238,8 +238,8 @@ export function calculateFeasibility(state: AppState, today: ISODate): Feasibili
       value: !level
         ? 'not recorded'
         : level.percentile !== undefined
-          ? `${round(level.marks)} marks (about ${round(level.percentile)} percentile)`
-          : `${round(level.marks)} marks`,
+          ? `about ${round(level.percentile)} percentile`
+          : `${round(level.marks ?? 0)} marks`,
     },
     { label: 'Trend', value: TREND_WORDS[forecast.trend.label].toLowerCase() },
     { label: 'Focus area', value: lead ? lead.section : 'not yet clear' },

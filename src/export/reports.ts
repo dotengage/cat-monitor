@@ -34,8 +34,8 @@ function writeHeadline(doc: PdfDoc, f: Forecast) {
   const p = f.forecast?.percentile;
   doc.stats([
     {
-      label: 'Current level',
-      value: f.level ? (f.level.percentile !== undefined ? r1(f.level.percentile) : `${r0(f.level.marks)} marks`) : NR,
+      label: 'Average (last 5)',
+      value: f.recentAveragePercentile !== undefined ? r1(f.recentAveragePercentile) : f.level?.marks !== undefined ? `${r0(f.level.marks)} marks` : NR,
     },
     { label: 'Likely exam day', value: p ? r1(p.p50) : NR },
     { label: 'Off day to great day', value: p ? `${r1(p.p10)} to ${r1(p.p90)}` : NR },
@@ -69,17 +69,17 @@ function writeForecastBlocks(doc: PdfDoc, f: Forecast) {
     doc.bullets(f.whatChanged.slice(1));
   }
 
-  doc.heading('Marks over time');
+  doc.heading('Percentile over time');
   doc.paragraph(f.trend.summary);
-  const marked = f.history.filter((h) => h.marks !== undefined);
-  if (marked.length > 0) {
+  const recorded = f.history.filter((h) => h.percentile !== undefined);
+  if (recorded.length > 0) {
     doc.lineChart(
-      marked.map((h) => ({ label: formatDate(h.date), value: h.marks as number })),
-      f.curve?.targetMarks !== undefined ? Math.round(f.curve.targetMarks) : undefined,
+      recorded.map((h) => ({ label: formatDate(h.date), value: h.percentile as number })),
+      f.target,
     );
   }
-  if (f.curve?.targetMarks !== undefined) {
-    doc.paragraph(`${f.target} percentile needs about ${r0(f.curve.targetMarks)} marks.`, { muted: true, size: 9 });
+  {
+    doc.paragraph(`On the actual CAT, ${f.target} percentile needs about ${r0(f.examTargetMarks)} marks.`, { muted: true, size: 9 });
   }
 
   if (f.constraint.established && f.constraint.top.length > 0) {
@@ -99,7 +99,7 @@ function writeForecastBlocks(doc: PdfDoc, f: Forecast) {
     doc.keyValues([
       [
         SECTION_LABELS[card.section],
-        `${STATUS_WORDS[card.status]}${level ? `, level ${level.percentile !== undefined ? `${r1(level.percentile)} pctl` : `${r0(level.marks)} marks`}` : ''}`,
+        `${STATUS_WORDS[card.status]}${level ? `, level ${level.percentile !== undefined ? `${r1(level.percentile)} pctl` : `${r0(level.marks ?? 0)} marks`}` : ''}`,
       ],
       ['Latest / average of last 5', `${card.latestPercentile ?? NR} / ${card.recentAveragePercentile ?? NR}`],
       ['Trend', TREND_WORDS[card.trend.label]],

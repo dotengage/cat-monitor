@@ -233,7 +233,7 @@ describe('step 6: the "projected = current" bug', () => {
   it('applies no drift when the trend is not significant', () => {
     const f = forecastOf(series(steady));
     expect(f.forecast?.drift).toBe(0);
-    expect(f.forecast?.notes.join(' ')).toMatch(/No drift applied/);
+    expect(f.forecast?.notes.join(' ')).toMatch(/No trend carried forward/);
   });
 
   it('keeps the likely value at or below the demonstrated best unless the trend is rising', () => {
@@ -448,9 +448,9 @@ describe('exam day on the real CAT scale', () => {
     expect(f.forecast!.probability!).toBeLessThan(0.25);
   });
 
-  it('reads 97 at roughly the marks the real exam asks for, not the mock provider', () => {
-    expect(climber().curve!.targetMarks!).toBeGreaterThan(70);
-    expect(climber().curve!.targetMarks!).toBeLessThan(82);
+  it('states the marks 97 takes on the actual CAT, whatever the mock provider marked to', () => {
+    expect(climber().examTargetMarks).toBeGreaterThan(70);
+    expect(climber().examTargetMarks).toBeLessThan(82);
   });
 
   it('never puts a bad day more than six points below the likely one', () => {
@@ -486,5 +486,69 @@ describe('the real-exam curve', () => {
       last = p;
     }
     expect(blend.toPercentile(blend.toMarks(95))).toBeCloseTo(95, 1);
+  });
+});
+describe('percentile is the measure', () => {
+  /** Full mocks with the given (marks, percentile) pairs, one every six days, the last today. */
+  const run = (rows: [number, number][], target = 97) => {
+    const mocks = rows.map(([m, p], i) =>
+      makeMock({
+        id: `p${i}`,
+        name: `Mock ${i + 1}`,
+        date: addDays(TODAY, -6 * (rows.length - 1 - i)),
+        overallScore: m,
+        overallPercentile: p,
+        sections: {
+          VARC: { score: Math.round(m * 0.4), percentile: p - 2, attempts: 18, correct: 10, incorrect: 8 },
+          DILR: { score: Math.round(m * 0.25), percentile: p - 5, attempts: 10, correct: 5, incorrect: 5 },
+          QA: { score: m - Math.round(m * 0.4) - Math.round(m * 0.25), percentile: p, attempts: 14, correct: 8, incorrect: 6 },
+        },
+      }),
+    );
+    const base = makeState({ mocks });
+    return calculateForecast({ ...base, profile: { ...base.profile, targetPercentile: target, examDate: addDays(TODAY, 10) } }, TODAY);
+  };
+  const flat = [90, 92, 89, 91.5, 90.5, 92.2, 90.1, 91];
+  const lastFive = (values: number[]) => values.slice(-5).reduce((a, b) => a + b, 0) / 5;
+
+  it('forecasts a steady 91 at about 91, not below it', () => {
+    const f = run(flat.map((p) => [42, p]));
+    expect(Math.abs(f.forecast!.percentile!.p50 - lastFive(flat))).toBeLessThan(1);
+    expect(f.level!.percentile!).toBeCloseTo(lastFive(flat), 0);
+  });
+
+  it('gives the same forecast whatever the marks, when the percentiles are the same', () => {
+    const percentiles = [78, 84, 82, 88, 89, 91, 90, 92, 91.5];
+    const hard = run(percentiles.map((p, i) => [22 + i * 2, p]));
+    const easy = run(percentiles.map((p, i) => [52 + i * 2, p]));
+    expect(hard.forecast!.percentile).toEqual(easy.forecast!.percentile);
+    expect(hard.forecast!.probability).toBe(easy.forecast!.probability);
+  });
+
+  it('puts a climb a little above its recent average, and a slide a little below', () => {
+    const climb = [80, 82, 84, 86, 87, 88, 89, 90, 91];
+    const slide = [...climb].reverse();
+    expect(run(climb.map((p) => [40, p])).forecast!.percentile!.p50).toBeGreaterThan(lastFive(climb));
+    expect(run(slide.map((p) => [40, p])).forecast!.percentile!.p50).toBeLessThan(lastFive(slide));
+  });
+
+  it('gives a real but modest chance of 97 from a steady 91', () => {
+    const chance = run(flat.map((p) => [42, p])).forecast!.probability!;
+    expect(chance).toBeGreaterThan(0.03);
+    expect(chance).toBeLessThan(0.15);
+  });
+
+  it('reads sections from their own percentiles too', () => {
+    const f = run(flat.map((p) => [42, p]));
+    const qa = f.sections.find((c) => c.section === 'QA')!;
+    expect(Math.abs(qa.forecast!.percentile!.p50 - lastFive(flat))).toBeLessThan(1.5);
+    expect(qa.trend.unit).toBe('percentile');
+    expect(f.constraint.top.every((d) => d.unit === 'percentile')).toBe(true);
+  });
+
+  it('measures the trend in percentile points', () => {
+    const f = run([80, 82, 84, 86, 87, 88, 89, 90, 91].map((p) => [40, p]));
+    expect(f.trend.unit).toBe('percentile');
+    expect(f.trend.summary).toMatch(/percentile points a week/);
   });
 });

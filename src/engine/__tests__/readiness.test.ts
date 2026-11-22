@@ -44,10 +44,18 @@ describe('readiness via the forecast', () => {
     expect(f.trend.label).toBe('INSUFFICIENT');
   });
 
-  it('cannot convert marks to percentile from one pair, and says what to log', () => {
-    const f = calculateForecast(makeState({ mocks: marksSeries([70]) }), TODAY);
+  it('forecasts no percentile from marks alone, and says to record percentile', () => {
+    const mocks = marksSeries([60, 64, 70]).map((m) => ({ ...m, overallPercentile: 0 }));
+    const f = calculateForecast(makeState({ mocks }), TODAY);
     expect(f.status).toBe('UNCONFIRMED');
+    expect(f.forecast?.percentile).toBeUndefined();
     expect(f.recommendedAction).toMatch(/percentile/i);
+  });
+
+  it('forecasts from a single recorded percentile, marked indicative', () => {
+    const f = calculateForecast(makeState({ mocks: marksSeries([70]) }), TODAY);
+    expect(f.forecast?.percentile).toBeDefined();
+    expect(f.forecast?.indicative).toBe(true);
   });
 
   it('calls a flat series well below target OFF TRACK', () => {

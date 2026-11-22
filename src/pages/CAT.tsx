@@ -10,6 +10,7 @@ import { Callout, Card, Empty, Stat, StatGrid, StatusPill } from '../ui/componen
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r0 = (n: number) => Math.round(n);
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${r1(n)}`;
+const perWeek = (unit: 'percentile' | 'marks') => (unit === 'percentile' ? 'points a week' : 'marks a week');
 const chance = (p: number) => (p < 0.01 ? 'under 1%' : p > 0.99 ? 'over 99%' : `${Math.round(p * 100)}%`);
 
 /** Encouraging tones only: green when on course, the accent colour otherwise. */
@@ -38,24 +39,24 @@ export function CAT() {
       <Card title="Where you stand">
         <StatGrid>
           <Stat
-            label="Current level"
-            value={f.level ? (f.level.percentile !== undefined ? r1(f.level.percentile) : `${r0(f.level.marks)} marks`) : '—'}
-            sub={f.level ? (f.level.percentile !== undefined ? `about ${r0(f.level.marks)} marks` : 'percentile not recorded') : 'take a mock'}
+            label="Average (last 5)"
+            value={f.recentAveragePercentile !== undefined ? r1(f.recentAveragePercentile) : f.level?.marks !== undefined ? `${r0(f.level.marks)} marks` : '—'}
+            sub={f.latestPercentile !== undefined ? `latest ${r1(f.latestPercentile)}` : 'record a percentile'}
           />
           <Stat
             label="Likely on exam day"
             value={p ? r1(p.p50) : f.forecast ? `${r0(f.forecast.marks.p50)} marks` : '—'}
-            sub={p ? `${r1(p.p10)} to ${r1(p.p90)}` : 'needs marks and percentile'}
+            sub={p ? `${r1(p.p10)} to ${r1(p.p90)}` : 'needs a recorded percentile'}
           />
           <Stat
             label={`Chance of ${f.target}`}
             value={f.forecast?.probability !== undefined ? chance(f.forecast.probability) : '—'}
-            sub={f.curve?.targetMarks !== undefined ? `${f.target} needs about ${r0(f.curve.targetMarks)} marks` : undefined}
+            sub={`${f.target} needs about ${r0(f.examTargetMarks)} marks on the CAT`}
           />
           <Stat
             label="Trend"
             value={TREND_WORDS[f.trend.label]}
-            sub={f.trend.slopePerWeek !== undefined ? `${signed(f.trend.slopePerWeek)} marks a week` : undefined}
+            sub={f.trend.slopePerWeek !== undefined ? `${signed(f.trend.slopePerWeek)} ${perWeek(f.trend.unit)}` : undefined}
           />
         </StatGrid>
 
@@ -77,7 +78,13 @@ export function CAT() {
               <div key={sc.key} className={`scenario scenario-${sc.key.toLowerCase()}`}>
                 <div className="scenario-label">{sc.label}</div>
                 <div className="scenario-value mono">{sc.percentile !== undefined ? r1(sc.percentile) : r0(sc.marks)}</div>
-                <div className="tiny muted">{sc.percentile !== undefined ? `percentile · ${r0(sc.marks)} marks` : 'marks'}</div>
+                <div className="tiny muted">
+                  {sc.percentile === undefined
+                    ? 'marks'
+                    : f.forecast?.marksScale === 'cat'
+                      ? `percentile · about ${r0(sc.marks)} marks on the CAT`
+                      : `percentile · ${r0(sc.marks)} marks`}
+                </div>
                 <div className="tiny scenario-chance">{sc.chance}</div>
                 <ul className="bullets tiny">
                   {sc.conditions.map((c) => (
@@ -101,22 +108,49 @@ export function CAT() {
         </Card>
       )}
 
-      {/* 4. Trend */}
-      <Card title="Marks over time">
-        {marked.length > 0 ? (
+      {/* 4. Trend: percentile, the measure that compares across mocks */}
+      {f.history.some((h) => h.percentile !== undefined) ? (
+        <Card title="Percentile over time">
           <TrendChart
-            labels={marked.map((h) => formatDate(h.date))}
-            target={f.curve?.targetMarks !== undefined ? r0(f.curve.targetMarks) : undefined}
-            series={[{ name: 'Overall marks', values: marked.map((h) => h.marks ?? null), tone: 'accent' }]}
-            ariaLabel="Overall marks over time"
+            labels={f.history.map((h) => formatDate(h.date))}
+            target={state.profile.targetPercentile}
+            series={[
+              { name: 'Overall', values: f.history.map((h) => h.percentile ?? null), tone: 'accent' },
+              ...SECTIONS.map((s) => ({
+                name: s,
+                values: alignSection(state.mocks, f.history.map((h) => h.date), s),
+                tone: SECTION_TONES[s],
+                dashed: true,
+              })),
+            ]}
+            ariaLabel="Recorded percentiles over time, overall and by section"
           />
-        ) : (
-          <Empty>No full mocks with marks yet.</Empty>
-        )}
-      </Card>
+          <ChartLegend
+            items={[
+              { label: 'Overall', tone: 'accent' },
+              ...SECTIONS.map((s) => ({ label: SECTION_LABELS[s], tone: SECTION_TONES[s] })),
+            ]}
+          />
+        </Card>
+      ) : (
+        <Card title="Marks over time">
+          {marked.length > 0 ? (
+            <TrendChart
+              labels={marked.map((h) => formatDate(h.date))}
+              series={[{ name: 'Overall marks', values: marked.map((h) => h.marks ?? null), tone: 'accent' }]}
+              ariaLabel="Overall marks over time"
+            />
+          ) : (
+            <Empty>No full mocks recorded yet.</Empty>
+          )}
+          <p className="tiny muted" style={{ marginTop: 8 }}>
+            Record each mock's percentile: marks differ from paper to paper, so the forecast reads percentile.
+          </p>
+        </Card>
+      )}
 
       {/* 5. Where the next marks are */}
-      {(focus.length > 0 || f.cleanPaper?.combinedBestMarks !== undefined) && (
+      {(focus.length > 0 || f.bestPercentile !== undefined) && (
         <Card title="Where your next marks are">
           {focus.length > 0 && (
             <ul className="bullets small">
@@ -124,15 +158,15 @@ export function CAT() {
                 <li key={d.section}>
                   <strong>{SECTION_LABELS[d.section]}</strong>:{' '}
                   {d.kind === 'CONSISTENCY'
-                    ? `you have scored ${r0(d.best)} here; steadier papers bring that level back more often.`
-                    : `room to grow from ${r0(d.mean)} towards ${r0(d.best)} marks and beyond.`}
+                    ? `you have reached ${r0(d.best)} ${d.unit === 'percentile' ? 'percentile' : 'marks'} here; steadier papers bring that level back more often.`
+                    : `room to grow from ${r0(d.mean)} towards ${r0(d.best)} ${d.unit === 'percentile' ? 'percentile' : 'marks'} and beyond.`}
                 </li>
               ))}
             </ul>
           )}
-          {f.cleanPaper?.combinedBestMarks !== undefined && (
+          {f.bestPercentile !== undefined && (
             <p className="small muted" style={{ marginTop: focus.length > 0 ? 8 : 0 }}>
-              Your section bests together already make {r0(f.cleanPaper.combinedBestMarks)} marks.
+              Your best mock so far: {r1(f.bestPercentile)} percentile.
             </p>
           )}
         </Card>
@@ -158,30 +192,6 @@ export function CAT() {
         </div>
       </Card>
 
-      {f.history.some((h) => h.percentile !== undefined) && (
-        <Card title="Recorded percentiles">
-          <TrendChart
-            labels={f.history.map((h) => formatDate(h.date))}
-            target={state.profile.targetPercentile}
-            series={[
-              { name: 'Overall', values: f.history.map((h) => h.percentile ?? null), tone: 'accent' },
-              ...SECTIONS.map((s) => ({
-                name: s,
-                values: alignSection(state.mocks, f.history.map((h) => h.date), s),
-                tone: SECTION_TONES[s],
-                dashed: true,
-              })),
-            ]}
-            ariaLabel="Recorded percentiles over time, overall and by section"
-          />
-          <ChartLegend
-            items={[
-              { label: 'Overall', tone: 'accent' },
-              ...SECTIONS.map((s) => ({ label: SECTION_LABELS[s], tone: SECTION_TONES[s] })),
-            ]}
-          />
-        </Card>
-      )}
     </>
   );
 }
@@ -211,20 +221,15 @@ function SectionReadinessCard({ card, target }: { card: SectionCard; target: num
     >
       <StatGrid>
         <Stat
-          label="Readiness"
-          value={level ? (level.percentile !== undefined ? r1(level.percentile) : `${r0(level.marks)} marks`) : '—'}
-          sub={level ? `about ${r0(level.marks)} marks` : 'no marks recorded'}
+          label="Average (last 5)"
+          value={card.recentAveragePercentile ?? (level?.marks !== undefined ? `${r0(level.marks)} marks` : '—')}
+          sub={card.recentCount > 0 ? `of ${card.recentCount} recorded` : 'no percentiles yet'}
         />
         <Stat label="Latest percentile" value={card.latestPercentile ?? '—'} sub={`target ${target}`} />
         <Stat
-          label="Average (last 5)"
-          value={card.recentAveragePercentile ?? '—'}
-          sub={card.recentCount > 0 ? `of ${card.recentCount} recorded` : 'no percentiles yet'}
-        />
-        <Stat
           label="Trend"
           value={TREND_WORDS[card.trend.label]}
-          sub={card.trend.slopePerWeek !== undefined ? `${signed(card.trend.slopePerWeek)} marks a week` : undefined}
+          sub={card.trend.slopePerWeek !== undefined ? `${signed(card.trend.slopePerWeek)} ${perWeek(card.trend.unit)}` : undefined}
         />
         <Stat label="Exam day" value={fc ? r1(fc.p50) : '—'} sub={fc ? `${r1(fc.p10)} to ${r1(fc.p90)}` : 'needs section percentiles'} />
       </StatGrid>

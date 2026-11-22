@@ -1,11 +1,19 @@
 /**
  * The forecast.
  *
- * Implements the forecasting guide end to end: clean the data, work in marks,
- * weight recent mocks, test the trend for significance rather than eyeballing
- * it, find the binding constraint from variance rather than from the last
- * mock, and replace the single "projected" number with a simulated
- * distribution and a rule-based status.
+ * Percentile is the measure. Marks are not comparable from one mock to the
+ * next - a hard paper's 40 can be an easy paper's 60, at the same percentile -
+ * so a forecast worked in marks inherits every provider's difficulty. The
+ * level, the trend and exam day are all worked from recorded percentiles, on
+ * the log-odds scale where a point near the top is properly harder to gain
+ * than one in the middle. Marks are used only where they are comparable:
+ * within a section's own attempt pattern, and when no percentile was
+ * recorded at all.
+ *
+ * Otherwise it follows the forecasting guide: weight recent mocks, test the
+ * trend for significance rather than eyeballing it, find the section to work
+ * on from variance rather than from the last mock, and replace the single
+ * "projected" number with a simulated distribution and a rule-based status.
  *
  * Every number it produces carries the evidence it came from, and where the
  * data cannot support a finding it says so and says what to log next.
@@ -13,7 +21,7 @@
 import { SECTIONS, SECTION_LABELS } from '../../config/catConfig';
 import { daysBetween, formatDate } from '../../domain/date';
 import type { AppState, ISODate, SectionKey, TrackStatus } from '../../domain/types';
-import { blendCurves, fitCurve, referenceCurve, type Curve } from './curve';
+import { fitCurve, fromLogit, logit, referenceCurve, type Curve } from './curve';
 import { cleanData, type CleanMock } from './hygiene';
 import { describeContradiction, minePatterns, type PatternReport } from './patterns';
 import {
@@ -64,14 +72,19 @@ const SECTION_DRIFT_CAP_PER_WEEK = DRIFT_CAP_PER_WEEK / 3;
 const TAPER_AFTER_WEEKS = 6;
 const TAPER = 0.7;
 const PROVIDER_NOISE_POINTS = 3;
+/** Recorded percentiles that make up the current level: the average of the last five. */
+const LEVEL_WINDOW = 5;
+/** A last-five spread of percentile under this, with no significant trend, is FLAT. */
+const PERCENTILE_FLAT_SPREAD = 3;
+const SECTION_PERCENTILE_FLAT_SPREAD = 6;
+/** The most a trend may move the level per week, in log-odds (about 0.6 points at the 90th). */
+const LOGIT_DRIFT_CAP_PER_WEEK = 0.08;
 /**
- * How far the exam-day reading leans on the real exam's curve. Inside the
- * range your mocks cover, your own curve is good evidence and the two are
- * split evenly. Above your best paper your curve is only extrapolating, so
- * the real exam's takes over across the next REFERENCE_RAMP marks.
+ * How far exam day strays from your mock level, in log-odds: a different
+ * paper, a different field, nerves. At the 91st percentile it puts a great
+ * day in the high 90s; an off day is capped separately, below.
  */
-const REFERENCE_WEIGHT = 0.5;
-const REFERENCE_RAMP = 10;
+const EXAM_NOISE_LOGIT = 0.75;
 /**
  * The furthest a bad day falls below the likely percentile. Your worst mock
  * paper is not your worst exam day: the exam is one sitting you have
@@ -97,10 +110,11 @@ export interface Distribution {
 
 export interface Level {
   n: number;
-  marks: number;
-  sd: number;
-  low: number;
-  high: number;
+  /** Present for a level worked in marks: when no percentile was recorded. */
+  marks?: number;
+  sd?: number;
+  low?: number;
+  high?: number;
   percentile?: number;
   percentileLow?: number;
   percentileHigh?: number;
@@ -109,8 +123,10 @@ export interface Level {
 export interface TrendAnalysis {
   label: TrendLabel;
   n: number;
+  /** What the slope is measured in. */
+  unit: 'percentile' | 'marks';
   directionalOnly: boolean;
-  /** Marks per week, with its 90% interval. */
+  /** Units per week, with its 90% interval. */
   slopePerWeek?: number;
   ciLow?: number;
   ciHigh?: number;
@@ -124,6 +140,8 @@ export interface TrendAnalysis {
 
 export interface SectionDiagnostic {
   section: SectionKey;
+  /** Whether mean, best and floor are section percentiles or marks. */
+  unit: 'percentile' | 'marks';
   n: number;
   mean: number;
   best: number;
@@ -160,11 +178,16 @@ export interface Scenario {
 }
 
 export interface OverallForecast {
+  /**
+   * Marks for each outcome. From percentiles these are the marks the actual
+   * CAT asks for (`marksScale: 'cat'`), since mock marks are not comparable.
+   */
   marks: Distribution;
+  marksScale: 'cat' | 'mock';
   percentile?: Distribution;
   probability?: number;
   indicative: boolean;
-  /** Total drift applied, in marks. */
+  /** Total drift applied, in the unit the forecast was worked in. */
   drift: number;
   notes: string[];
   window: number;
@@ -241,6 +264,8 @@ export interface Forecast {
   level?: Level;
   trend: TrendAnalysis;
   forecast?: OverallForecast;
+  /** Marks the actual CAT asks for the target percentile, from typical recent years. */
+  examTargetMarks: number;
   scenarios: Scenario[];
   constraint: { established: boolean; top: SectionDiagnostic[]; note: string };
   cleanPaper?: CleanPaper;
@@ -322,11 +347,13 @@ export function currentLevel(values: number[], dates: ISODate[], today: ISODate,
   const weights = recencyWeights(dates, today);
   const marks = weightedMean(values, weights);
   const spread = weightedSd(values, weights);
-  const level: Level = { n: values.length, marks, sd: spread, low: marks - spread, high: marks + spread };
+  const low = marks - spread;
+  const high = marks + spread;
+  const level: Level = { n: values.length, marks, sd: spread, low, high };
   if (curve) {
     level.percentile = curve.toPercentile(marks);
-    level.percentileLow = curve.toPercentile(level.low);
-    level.percentileHigh = curve.toPercentile(level.high);
+    level.percentileLow = curve.toPercentile(low);
+    level.percentileHigh = curve.toPercentile(high);
   }
   return level;
 }
@@ -339,9 +366,11 @@ export function analyseTrend(
   points: { date: ISODate; value: number }[],
   today: ISODate,
   flatSpread = FLAT_SPREAD,
+  unit: TrendAnalysis['unit'] = 'marks',
 ): TrendAnalysis {
   const n = points.length;
   const values = points.map((p) => p.value);
+  const per = unit === 'percentile' ? 'percentile points' : 'marks';
 
   if (n < MIN_FOR_TREND) {
     const summary =
@@ -349,8 +378,8 @@ export function analyseTrend(
         ? 'No full mocks with marks yet.'
         : n === 1
           ? 'One full mock: no trend yet.'
-          : `Two full mocks (${signed(values[1] - values[0], 0)} marks between them): not enough to call a trend yet. One more makes it measurable.`;
-    return { label: 'INSUFFICIENT', n, directionalOnly: true, blocksRising: false, leadWithBlocks: false, summary };
+          : `Two full mocks (${signed(values[1] - values[0], unit === 'percentile' ? 1 : 0)} ${per} between them): not enough to call a trend yet. One more makes it measurable.`;
+    return { label: 'INSUFFICIENT', n, unit, directionalOnly: true, blocksRising: false, leadWithBlocks: false, summary };
   }
 
   const origin = points[0].date;
@@ -376,12 +405,13 @@ export function analyseTrend(
   const directionalOnly = n < DIRECTIONAL_BELOW;
 
   const summary = leadWithBlocks
-    ? `Improving: each stretch of mocks averages higher than the last (${blocks.map((b) => fmt(b, 0)).join(', ')} marks), across ${n} full mocks.`
-    : `${TREND_WORDS[label]}, about ${signed(slopePerWeek)} marks a week across ${n} full mocks.`;
+    ? `Improving: each stretch of mocks averages higher than the last (${blocks.map((b) => fmt(b, unit === 'percentile' ? 1 : 0)).join(', ')} ${per}), across ${n} full mocks.`
+    : `${TREND_WORDS[label]}, about ${signed(slopePerWeek)} ${per} a week across ${n} full mocks.`;
 
   return {
     label,
     n,
+    unit,
     directionalOnly,
     slopePerWeek,
     ciLow: Number.isFinite(ciLow) ? ciLow : undefined,
@@ -403,8 +433,13 @@ function diagnoseSections(
   today: ISODate,
   curves: Partial<Record<SectionKey, Curve | null>>,
 ): { established: boolean; all: SectionDiagnostic[]; note: string } {
-  // Shares only mean something when every section is measured on the same papers.
-  const complete = mocks.filter((m) => SECTIONS.every((s) => m.sections[s]?.marks !== undefined));
+  // Shares only mean something when every section is measured on the same
+  // papers - and in percentile where it was recorded, since a section's marks
+  // swing with each paper's difficulty as much as with the candidate.
+  const byPercentile = mocks.filter((m) => SECTIONS.every((s) => m.sections[s]?.percentile !== undefined));
+  const unit: SectionDiagnostic['unit'] = byPercentile.length >= MIN_FOR_CONSTRAINT ? 'percentile' : 'marks';
+  const complete = unit === 'percentile' ? byPercentile : mocks.filter((m) => SECTIONS.every((s) => m.sections[s]?.marks !== undefined));
+  const valueOf = (m: CleanMock, s: SectionKey) => (unit === 'percentile' ? m.sections[s]!.percentile : m.sections[s]!.marks) as number;
   if (complete.length < MIN_FOR_CONSTRAINT) {
     return {
       established: false,
@@ -414,9 +449,7 @@ function diagnoseSections(
   }
 
   const weights = recencyWeights(complete.map((m) => m.date), today);
-  const series = Object.fromEntries(
-    SECTIONS.map((s) => [s, complete.map((m) => m.sections[s]!.marks as number)]),
-  ) as Record<SectionKey, number[]>;
+  const series = Object.fromEntries(SECTIONS.map((s) => [s, complete.map((m) => valueOf(m, s))])) as Record<SectionKey, number[]>;
   const variances = SECTIONS.map((s) => variance(series[s]));
   const totalVariance = variances.reduce((a, v) => a + v, 0);
 
@@ -432,7 +465,8 @@ function diagnoseSections(
     const sectionMedian = median(values);
     const floorLevel = mean(bottom);
     const curve = curves[s];
-    const marginalValue = curve ? 1 / curve.marksPerPoint(curve.toPercentile(weightedLevel)) : undefined;
+    const marginalValue = unit === 'marks' && curve ? 1 / curve.marksPerPoint(curve.toPercentile(weightedLevel)) : undefined;
+    const units = unit === 'percentile' ? 'percentile points' : 'marks';
 
     /*
      * Rule 5 distinction. Variance does the separating: a capability gap is
@@ -446,11 +480,12 @@ function diagnoseSections(
     const kind: GapKind = varianceShare >= 1 / 3 && ceilingGap >= 0.5 * spread ? 'CONSISTENCY' : 'CAPABILITY';
     const why =
       kind === 'CONSISTENCY'
-        ? `${fmt(varianceShare * 100, 0)}% of the paper's swing and a best ${fmt(ceilingGap)} marks above the current level: the marks are there but do not arrive reliably.`
-        : `${fmt(varianceShare * 100, 0)}% of the swing with the best only ${fmt(ceilingGap)} marks above the current level: steady, but steadily low.`;
+        ? `${fmt(varianceShare * 100, 0)}% of the paper's swing and a best ${fmt(ceilingGap)} ${units} above the current level: it is there but does not arrive reliably.`
+        : `${fmt(varianceShare * 100, 0)}% of the swing with the best only ${fmt(ceilingGap)} ${units} above the current level: steady, with room to grow.`;
 
     return {
       section: s,
+      unit,
       n: values.length,
       mean: weightedLevel,
       best,
@@ -516,6 +551,7 @@ function cleanPaperRate(
   overallCurve: Curve | null,
   target: number,
   rising: boolean,
+  bestPercentile: number | undefined,
 ): CleanPaper | undefined {
   const complete = mocks.filter((m) => SECTIONS.every((s) => m.sections[s]?.marks !== undefined));
   if (complete.length === 0) return undefined;
@@ -550,8 +586,9 @@ function cleanPaperRate(
      * improvement, not inconsistency, and calling it a consistency problem
      * would send someone who is climbing to fix the wrong thing.
      */
-    consistencyHeadline:
-      !rising && combinedBestPercentile !== undefined && combinedBestPercentile >= target && rate < CLEAN_PAPER_LOW_RATE,
+    // Judged on a real paper's percentile, not on section marks added up
+    // across papers of different difficulty.
+    consistencyHeadline: !rising && bestPercentile !== undefined && bestPercentile >= target && rate < CLEAN_PAPER_LOW_RATE,
   };
 }
 
@@ -654,7 +691,7 @@ function finish(draws: number[], input: SimulationInput, n: number, unanalysedNo
   if (unanalysedNote) notes.push(unanalysedNote);
 
   const marks = summarise(adjusted);
-  if (!input.curve) return { marks, indicative, drift: input.drift.total, notes, window: Math.min(n, BOOTSTRAP_WINDOW) };
+  if (!input.curve) return { marks, marksScale: 'mock', indicative, drift: input.drift.total, notes, window: Math.min(n, BOOTSTRAP_WINDOW) };
 
   const curve = input.curve;
   const middle = curve.toPercentile(marks.p50);
@@ -666,6 +703,7 @@ function finish(draws: number[], input: SimulationInput, n: number, unanalysedNo
   const hits = percentiles.filter((p) => p >= input.target).length;
   return {
     marks,
+    marksScale: 'mock',
     percentile: summarise(percentiles),
     probability: hits / percentiles.length,
     indicative,
@@ -776,16 +814,18 @@ function sectionAction(card: Omit<SectionCard, 'action'>, conceptGap: boolean): 
   }
 
   const sectionalGap = card.sectional.difference ?? 0;
-  if (sectionalGap >= Math.max(3, card.level.marks * 0.1)) {
+  if (sectionalGap >= Math.max(3, (card.level.marks ?? 0) * 0.1)) {
     if (s === 'VARC') return `Your VARC sectionals run ${fmt(sectionalGap)} marks ahead of full-mock VARC. Take VARC with exactly the passage-selection rules you use in sectionals, and take it first.`;
     if (s === 'DILR') return `Your DILR sectionals run ${fmt(sectionalGap)} marks ahead of full-mock DILR. In full mocks, spend the first five minutes choosing two sets and do not switch once committed.`;
     return `Your QA sectionals run ${fmt(sectionalGap)} marks ahead of full-mock QA. In full mocks, do a first pass of only the questions you can start immediately, then return; late-paper fatigue is costing marks.`;
   }
 
   if (d?.kind === 'CONSISTENCY') {
-    if (s === 'VARC') return `VARC swings ${fmt(d.sd)} marks between papers with a best of ${fmt(d.best, 0)}. Fix your RC count${band ? ` (${band} attempts)` : ''} and drop any passage that is not clear after the first read.`;
-    if (s === 'DILR') return `DILR has reached ${fmt(d.best, 0)} marks but sits at ${fmt(d.mean)} now. Commit to two sets and leave any set with no progress after twelve minutes.`;
-    return `QA swings ${fmt(d.sd)} marks with a best of ${fmt(d.best, 0)}. Keep attempts at ${band ?? 'a fixed number'} and skip any question you cannot start within ninety seconds.`;
+    const swing = d.unit === 'percentile' ? 'percentile points' : 'marks';
+    const at = (v: number) => (d.unit === 'percentile' ? `${fmt(v, 0)} percentile` : `${fmt(v, 0)} marks`);
+    if (s === 'VARC') return `VARC swings ${fmt(d.sd)} ${swing} between papers with a best of ${at(d.best)}. Fix your RC count${band ? ` (${band} attempts)` : ''} and drop any passage that is not clear after the first read.`;
+    if (s === 'DILR') return `DILR has reached ${at(d.best)} but sits at ${at(d.mean)} now. Commit to two sets and leave any set with no progress after twelve minutes.`;
+    return `QA swings ${fmt(d.sd)} ${swing} with a best of ${at(d.best)}. Keep attempts at ${band ?? 'a fixed number'} and skip any question you cannot start within ninety seconds.`;
   }
 
   if (card.status === 'ON_TRACK') {
@@ -870,6 +910,115 @@ function simulate(
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* Percentile: the level, the trend and exam day                      */
+/* ------------------------------------------------------------------ */
+
+interface Point {
+  date: ISODate;
+  value: number;
+}
+
+/**
+ * The current level: the last five recorded percentiles, averaged on the
+ * log-odds scale with a gentle lean towards the most recent. For weekly
+ * mocks that is all but the plain average of the last five.
+ */
+export function percentileLevel(points: Point[], today: ISODate): Level | undefined {
+  if (points.length === 0) return undefined;
+  const recent = points.slice(-LEVEL_WINDOW);
+  const z = recent.map((p) => logit(p.value));
+  const weights = recencyWeights(recent.map((p) => p.date), today);
+  const centre = weightedMean(z, weights);
+  const spread = recent.length > 1 ? weightedSd(z, weights) : 0;
+  return {
+    n: points.length,
+    percentile: fromLogit(centre),
+    percentileLow: fromLogit(centre - spread),
+    percentileHigh: fromLogit(centre + spread),
+  };
+}
+
+/**
+ * Exam day, from recorded percentiles.
+ *
+ * The last five papers are resampled on the log-odds scale. With an
+ * established trend each is first brought up (or down) to today's level, and
+ * the trend is carried forward to exam day; both are capped, because no climb
+ * continues at its best rate. Then mock-to-exam variation is added: exam day
+ * is a different paper sat by a different field. So a steady 91 forecasts
+ * about 91, a climb towards it a little more, and a slide a little less.
+ */
+function percentileForecast(
+  points: Point[],
+  trend: TrendAnalysis,
+  today: ISODate,
+  weeksRemaining: number,
+  target: number,
+  unanalysedNote?: string,
+): OverallForecast {
+  const recent = points.slice(-LEVEL_WINDOW);
+  const z = recent.map((p) => logit(p.value));
+  const weights = recencyWeights(recent.map((p) => p.date), today);
+  const level = weightedMean(z, weights);
+  const q = fromLogit(level) / 100;
+
+  const established = trend.label === 'RISING' || trend.label === 'FALLING';
+  const perWeek = established
+    ? Math.max(-LOGIT_DRIFT_CAP_PER_WEEK, Math.min(LOGIT_DRIFT_CAP_PER_WEEK, (trend.slopePerWeek ?? 0) / (100 * q * (1 - q))))
+    : 0;
+  const taper = weeksRemaining > TAPER_AFTER_WEEKS ? TAPER : 1;
+  const drift = perWeek * weeksRemaining * taper;
+  const weeksAgo = recent.map((p) => daysBetween(p.date, today) / 7);
+
+  const random = seededRandom(hashString(`${today}|${recent.map((p) => `${p.date}:${p.value}`).join('|')}`));
+  const pick = weightedPicker(weights, random);
+  let draws: number[] = [];
+  for (let i = 0; i < DRAWS; i += 1) {
+    const k = pick();
+    draws.push(z[k] + perWeek * weeksAgo[k] + drift + normal(random) * EXAM_NOISE_LOGIT);
+  }
+  draws.sort((a, b) => a - b);
+
+  const notes: string[] = [
+    established ? `Trend carried forward at ${fmt(perWeek, 3)} log-odds a week.` : 'No trend carried forward: none is established.',
+  ];
+  const middle = quantileSorted(draws, 0.5);
+  const best = Math.max(...z);
+  if (trend.label !== 'RISING' && middle > best) {
+    draws = draws.map((v) => v + best - middle);
+    notes.push('Likely value held to your best recent percentile: improvement is not established.');
+  }
+  const indicative = points.length < MIN_FOR_FORECAST;
+  if (indicative) {
+    const centre = quantileSorted(draws, 0.5);
+    draws = draws.map((v) => centre + (v - centre) * 1.5);
+    notes.push(`Band widened: only ${points.length} recorded percentile${points.length === 1 ? '' : 's'}.`);
+  }
+  if (unanalysedNote) notes.push(unanalysedNote);
+
+  const likely = fromLogit(quantileSorted(draws, 0.5));
+  const floor = likely - BAD_DAY_DROP;
+  const percentiles = draws.map((v) => Math.max(floor, fromLogit(v)));
+  const hits = percentiles.filter((v) => v >= target).length;
+  const distribution = summarise(percentiles);
+
+  return {
+    marks: {
+      p10: referenceCurve.toMarks(distribution.p10),
+      p50: referenceCurve.toMarks(distribution.p50),
+      p90: referenceCurve.toMarks(distribution.p90),
+    },
+    marksScale: 'cat',
+    percentile: distribution,
+    probability: hits / percentiles.length,
+    indicative,
+    drift: fromLogit(level + drift) - fromLogit(level),
+    notes,
+    window: recent.length,
+  };
+}
+
 const cache = new WeakMap<AppState, Map<string, Forecast>>();
 
 export function calculateForecast(state: AppState, today: ISODate): Forecast {
@@ -889,7 +1038,6 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   const weeksRemaining = daysRemaining / 7;
   const data = cleanData(state.mocks);
   const { full, marked, sectionals } = data;
-  const n = marked.length;
   const patterns = minePatterns(full);
 
   const history: HistoryPoint[] = full.map((m) => ({
@@ -906,21 +1054,23 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   const overallCurve = fitCurve(
     marked.filter((m) => m.percentile !== undefined).map((m) => ({ marks: m.marks as number, percentile: m.percentile as number })),
   );
-  // Exam day is the real CAT, so its marks are read partly on the real
-  // exam's scale. Current level stays on your mocks' own scale.
-  const bestMarks = marked.length > 0 ? Math.max(...marked.map((m) => m.marks as number)) : 0;
-  const examCurve = overallCurve
-    ? blendCurves(overallCurve, referenceCurve, (m) =>
-        m <= bestMarks ? REFERENCE_WEIGHT : REFERENCE_WEIGHT + ((1 - REFERENCE_WEIGHT) * (m - bestMarks)) / REFERENCE_RAMP,
-      )
-    : null;
   const curves = Object.fromEntries(SECTIONS.map((s) => [s, sectionCurve(marked, s)])) as Record<SectionKey, Curve | null>;
 
+  // Percentile where it was recorded; marks only for mocks that have nothing else.
+  const percentilePoints: Point[] = full
+    .filter((m) => m.percentile !== undefined)
+    .map((m) => ({ date: m.date, value: m.percentile as number }));
+  const byPercentile = percentilePoints.length > 0;
   const points = marked.map((m) => ({ date: m.date, value: m.marks as number }));
-  const trend = analyseTrend(points, today);
-  const level = currentLevel(points.map((p) => p.value), points.map((p) => p.date), today, overallCurve);
+  const n = byPercentile ? percentilePoints.length : marked.length;
 
-  const window = marked.slice(-BOOTSTRAP_WINDOW);
+  const trend = byPercentile ? analyseTrend(percentilePoints, today, PERCENTILE_FLAT_SPREAD, 'percentile') : analyseTrend(points, today);
+  const level = byPercentile
+    ? percentileLevel(percentilePoints, today)
+    : currentLevel(points.map((p) => p.value), points.map((p) => p.date), today, overallCurve);
+
+  const evidence = byPercentile ? full.filter((m) => m.percentile !== undefined) : marked;
+  const window = evidence.slice(-BOOTSTRAP_WINDOW);
   const unanalysedRecent = window.filter((m) => !m.analysed).length;
   const unanalysedNote =
     window.length > 0 && unanalysedRecent > window.length / 3
@@ -931,7 +1081,7 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
     n === 0 ? 'none' : n < MIN_FOR_FORECAST ? 'low' : n < BOOTSTRAP_WINDOW || unanalysedNote ? 'medium' : 'high';
 
   /* ---- Constraint and clean paper ---- */
-  const diagnosis = diagnoseSections(marked, today, curves);
+  const diagnosis = diagnoseSections(full, today, curves);
   // A section only binds if it actually stands out. When every section is
   // steady at its best the ranks are all zero, and naming one would be arbitrary.
   const top = [...diagnosis.all]
@@ -941,74 +1091,81 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   if (diagnosis.established && top.length === 0) {
     diagnosis.note = 'No section stands out: none carries both an above-average share of the swing and unrealised upside.';
   }
-  const cleanPaper = cleanPaperRate(marked, overallCurve, target, trend.label === 'RISING');
+  const bestRecorded = recorded.length > 0 ? Math.max(...recorded) : undefined;
+  const cleanPaper = cleanPaperRate(marked, overallCurve, target, trend.label === 'RISING', bestRecorded);
 
   /* ---- Simulation ---- */
   let forecast: OverallForecast | undefined;
   const sectionForecasts: Partial<Record<SectionKey, OverallForecast>> = {};
   const sectionTrends = {} as Record<SectionKey, TrendAnalysis>;
   const sectionPoints = {} as Record<SectionKey, { date: ISODate; value: number }[]>;
+  const sectionPercentilePoints = {} as Record<SectionKey, Point[]>;
   for (const s of SECTIONS) {
     sectionPoints[s] = marked
       .filter((m) => m.sections[s]?.marks !== undefined)
       .map((m) => ({ date: m.date, value: m.sections[s]!.marks as number }));
-    sectionTrends[s] = analyseTrend(sectionPoints[s], today, SECTION_FLAT_SPREAD);
+    sectionPercentilePoints[s] = full
+      .filter((m) => m.sections[s]?.percentile !== undefined)
+      .map((m) => ({ date: m.date, value: m.sections[s]!.percentile as number }));
+    sectionTrends[s] =
+      sectionPercentilePoints[s].length > 0
+        ? analyseTrend(sectionPercentilePoints[s], today, SECTION_PERCENTILE_FLAT_SPREAD, 'percentile')
+        : analyseTrend(sectionPoints[s], today, SECTION_FLAT_SPREAD);
   }
 
-  if (n > 0) {
-    const weights = recencyWeights(window.map((m) => m.date), today);
-    const overallDrift = decideDrift(trend, points, today, weeksRemaining, DRIFT_CAP_PER_WEEK);
-    const overallNoise = overallCurve
-      ? PROVIDER_NOISE_POINTS * overallCurve.marksPerPoint(level?.percentile ?? target)
-      : 0;
+  // Marks, for mocks recorded without a percentile: the original simulation,
+  // which can say nothing about percentile without pairs to convert by.
+  if (marked.length > 0) {
+    const markedWindow = marked.slice(-BOOTSTRAP_WINDOW);
+    const weights = recencyWeights(markedWindow.map((m) => m.date), today);
+    const markTrend = byPercentile ? analyseTrend(points, today) : trend;
+    const overallDrift = decideDrift(markTrend, points, today, weeksRemaining, DRIFT_CAP_PER_WEEK);
+    const markLevel = currentLevel(points.map((p) => p.value), points.map((p) => p.date), today, overallCurve);
+    const overallNoise = overallCurve ? PROVIDER_NOISE_POINTS * overallCurve.marksPerPoint(markLevel?.percentile ?? target) : 0;
 
     const sectionParams = {} as Record<SectionKey, SeriesParams>;
     const sectionDrifts = {} as Record<SectionKey, DriftDecision>;
+    const sectionMarkTrends = {} as Record<SectionKey, TrendAnalysis>;
     for (const s of SECTIONS) {
-      sectionDrifts[s] = decideDrift(sectionTrends[s], sectionPoints[s], today, weeksRemaining, SECTION_DRIFT_CAP_PER_WEEK);
-      const curve = curves[s];
-      const sectionLevel = currentLevel(sectionPoints[s].map((p) => p.value), sectionPoints[s].map((p) => p.date), today, curve);
-      sectionParams[s] = {
-        drift: sectionDrifts[s].total,
-        catchUp: catchUpRate(sectionTrends[s], SECTION_DRIFT_CAP_PER_WEEK),
-        noise: curve
-          ? PROVIDER_NOISE_POINTS * curve.marksPerPoint(sectionLevel?.percentile ?? target)
-          : overallNoise / Math.sqrt(3),
-      };
+      sectionMarkTrends[s] = analyseTrend(sectionPoints[s], today, SECTION_FLAT_SPREAD);
+      sectionDrifts[s] = decideDrift(sectionMarkTrends[s], sectionPoints[s], today, weeksRemaining, SECTION_DRIFT_CAP_PER_WEEK);
+      sectionParams[s] = { drift: sectionDrifts[s].total, catchUp: catchUpRate(sectionMarkTrends[s], SECTION_DRIFT_CAP_PER_WEEK), noise: 0 };
     }
 
-    const seed = hashString(`${today}|${window.map((m) => `${m.date}:${m.marks}:${SECTIONS.map((s) => m.sections[s]?.marks ?? '').join(',')}`).join('|')}`);
-    const weeksAgo = window.map((m) => daysBetween(m.date, today) / 7);
+    const seed = hashString(`${today}|${markedWindow.map((m) => `${m.date}:${m.marks}:${SECTIONS.map((s) => m.sections[s]?.marks ?? '').join(',')}`).join('|')}`);
+    const weeksAgo = markedWindow.map((m) => daysBetween(m.date, today) / 7);
     const draws = simulate(
-      window,
+      markedWindow,
       weights,
       weeksAgo,
       seed,
-      { drift: overallDrift.total, noise: overallNoise, catchUp: catchUpRate(trend, DRIFT_CAP_PER_WEEK) },
+      { drift: overallDrift.total, noise: overallNoise, catchUp: catchUpRate(markTrend, DRIFT_CAP_PER_WEEK) },
       sectionParams,
     );
 
-    forecast = finish(
-      draws.overall,
-      { best: Math.max(...points.map((p) => p.value)), trend, drift: overallDrift, noise: overallNoise, curve: examCurve, target },
-      n,
-      unanalysedNote,
-    );
-
+    if (!byPercentile) {
+      forecast = finish(
+        draws.overall,
+        { best: Math.max(...points.map((p) => p.value)), trend, drift: overallDrift, noise: overallNoise, curve: null, target },
+        marked.length,
+        unanalysedNote,
+      );
+    }
     for (const s of SECTIONS) {
-      if (draws.sections[s].length === 0 || sectionPoints[s].length === 0) continue;
+      if (sectionPercentilePoints[s].length > 0 || draws.sections[s].length === 0 || sectionPoints[s].length === 0) continue;
       sectionForecasts[s] = finish(
         draws.sections[s],
-        {
-          best: Math.max(...sectionPoints[s].map((p) => p.value)),
-          trend: sectionTrends[s],
-          drift: sectionDrifts[s],
-          noise: sectionParams[s].noise,
-          curve: curves[s],
-          target,
-        },
+        { best: Math.max(...sectionPoints[s].map((p) => p.value)), trend: sectionTrends[s], drift: sectionDrifts[s], noise: 0, curve: null, target },
         sectionPoints[s].length,
       );
+    }
+  }
+
+  // Percentile: the forecast that matters, wherever percentiles were recorded.
+  if (byPercentile) forecast = percentileForecast(percentilePoints, trend, today, weeksRemaining, target, unanalysedNote);
+  for (const s of SECTIONS) {
+    if (sectionPercentilePoints[s].length > 0) {
+      sectionForecasts[s] = percentileForecast(sectionPercentilePoints[s], sectionTrends[s], today, weeksRemaining, target);
     }
   }
 
@@ -1016,13 +1173,10 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   let status: TrackStatus = 'UNCONFIRMED';
   let highVariance = false;
   let statusRule: string;
-  if (n === 0) {
-    statusRule =
-      full.length === 0
-        ? 'Take a full mock to see where you stand.'
-        : 'Record overall marks for your full mocks to see where you stand.';
+  if (full.length === 0) {
+    statusRule = 'Take a full mock to see where you stand.';
   } else if (!forecast?.percentile) {
-    statusRule = 'Record marks and percentile for two full mocks to see your exam-day percentile.';
+    statusRule = 'Record the percentile of your full mocks to see your exam-day percentile.';
   } else {
     const p = forecast.percentile;
     const decided = statusFromGap(target, p.p50, p.p90 - p.p10);
@@ -1034,7 +1188,10 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   /* ---- Section cards ---- */
   const sections: SectionCard[] = SECTIONS.map((s) => {
     const curve = curves[s];
-    const sectionLevel = currentLevel(sectionPoints[s].map((p) => p.value), sectionPoints[s].map((p) => p.date), today, curve);
+    const sectionLevel =
+      sectionPercentilePoints[s].length > 0
+        ? percentileLevel(sectionPercentilePoints[s], today)
+        : currentLevel(sectionPoints[s].map((p) => p.value), sectionPoints[s].map((p) => p.date), today, curve);
     const sectionPercentiles = full.map((m) => m.sections[s]?.percentile);
     const latestPercentile = [...sectionPercentiles].reverse().find((p): p is number => typeof p === 'number');
     const recent = lastFiveAverage(sectionPercentiles);
@@ -1043,9 +1200,9 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
     let sectionStatus: TrackStatus = 'UNCONFIRMED';
     let sectionRule: string;
     if (!sectionLevel) {
-      sectionRule = `Record ${SECTION_LABELS[s]} marks in your next full mock.`;
+      sectionRule = `Record ${SECTION_LABELS[s]} in your next full mock.`;
     } else if (!sectionForecast?.percentile) {
-      sectionRule = `Record ${SECTION_LABELS[s]} marks and percentile in two full mocks.`;
+      sectionRule = `Record the ${SECTION_LABELS[s]} percentile in your full mocks.`;
     } else {
       const decided = statusFromGap(target, sectionForecast.percentile.p50, sectionForecast.percentile.p90 - sectionForecast.percentile.p10);
       sectionStatus = decided.status;
@@ -1074,26 +1231,29 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   /* ---- Scenarios ---- */
   const scenarios: Scenario[] = [];
   if (forecast) {
-    const averages = sections
-      .filter((c) => c.level)
-      .map((c) => `${SECTION_LABELS[c.section]} ${fmt(c.level!.marks, 0)}`)
+    const inPercentile = byPercentile;
+    const unitOf = (d: SectionDiagnostic) => (d.unit === 'percentile' ? 'percentile' : 'marks');
+    const levels = sections.filter((c) => (inPercentile ? c.level?.percentile !== undefined : c.level?.marks !== undefined));
+    const averages = levels
+      .map((c) => `${SECTION_LABELS[c.section]} ${fmt((inPercentile ? c.level!.percentile : c.level!.marks) as number, 0)}`)
       .join(', ');
     const floorSection = [...diagnosis.all].sort((a, b) => b.floorLoss - a.floorLoss)[0];
     const ceilingSection = [...diagnosis.all].sort((a, b) => b.ceilingGap - a.ceilingGap)[0];
-    const values = points.map((p) => p.value);
+    const values = (inPercentile ? percentilePoints : points).map((p) => p.value).slice(-BOOTSTRAP_WINDOW);
+    const unitWord = inPercentile ? 'percentile' : 'marks';
 
     const bad = floorSection
-      ? [`${SECTION_LABELS[floorSection.section]} has an off day (about ${fmt(floorSection.floorLevel, 0)} marks) while the rest holds.`]
-      : [`A paper like your weakest recent mock (${fmt(Math.min(...values.slice(-BOOTSTRAP_WINDOW)), 0)} marks).`];
+      ? [`${SECTION_LABELS[floorSection.section]} has an off day (about ${fmt(floorSection.floorLevel, 0)} ${unitOf(floorSection)}) while the rest holds.`]
+      : [`A paper like your weakest recent mock (${fmt(Math.min(...values), 0)} ${unitWord}).`];
 
     const great = ceilingSection
       ? [
-          `${SECTION_LABELS[ceilingSection.section]} matches its best (${fmt(ceilingSection.best, 0)} marks).`,
+          `${SECTION_LABELS[ceilingSection.section]} matches its best (${fmt(ceilingSection.best, 0)} ${unitOf(ceilingSection)}).`,
           'The other two sections hold their usual level.',
         ]
-      : [`A paper like your best recent mock (${fmt(Math.max(...values.slice(-BOOTSTRAP_WINDOW)), 0)} marks).`];
+      : [`A paper like your best recent mock (${fmt(Math.max(...values), 0)} ${unitWord}).`];
 
-    const likely = averages ? [`Sections land near their recent level (${averages} marks).`] : ['A typical paper by your recent standard.'];
+    const likely = averages ? [`Sections land near their recent level (${averages} ${unitWord}).`] : ['A typical paper by your recent standard.'];
 
     const pctl = forecast.percentile;
     scenarios.push(
@@ -1121,8 +1281,8 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   if (level) {
     headline.push(
       level.percentile !== undefined
-        ? `Current level: about ${fmt(level.percentile)} percentile (${fmt(level.marks, 0)} marks).`
-        : `Current level: about ${fmt(level.marks, 0)} marks.`,
+        ? `Current level: about ${fmt(level.percentile)} percentile.`
+        : `Current level: about ${fmt(level.marks ?? 0, 0)} marks.`,
     );
   }
   if (forecast?.percentile && forecast.probability !== undefined) {
@@ -1141,12 +1301,10 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
   const lead = top[0];
   if (full.length === 0) {
     recommendedAction = 'Take one full-length mock under exam conditions and record marks and percentile for the paper and each section.';
-  } else if (n === 0) {
-    recommendedAction = 'Record overall marks for each full mock, not just percentile. Every part of the forecast is worked in marks.';
-  } else if (!overallCurve) {
-    recommendedAction = 'Record the overall percentile for your next full mock. With two marks-and-percentile pairs the forecast can convert marks into percentile.';
+  } else if (!byPercentile) {
+    recommendedAction = 'Record the overall percentile of your next full mock. Percentile, not marks, is what the forecast reads.';
   } else if (cleanPaper?.consistencyHeadline) {
-    recommendedAction = `Your section bests together already make ${fmt(cleanPaper.combinedBestMarks!, 0)} marks, enough for ${target}. The work now is putting them in the same paper${lead ? `, starting with ${SECTION_LABELS[lead.section]}` : ''}: a fixed attempt plan and a firm rule for when to move on.`;
+    recommendedAction = `Your best mock already reached ${fmt(bestRecorded!)} percentile, past what ${target} needs. The work now is putting them in the same paper${lead ? `, starting with ${SECTION_LABELS[lead.section]}` : ''}: a fixed attempt plan and a firm rule for when to move on.`;
   } else if (diagnosis.established && lead) {
     const card = sections.find((c) => c.section === lead.section)!;
     recommendedAction =
@@ -1176,13 +1334,14 @@ function buildForecast(state: AppState, today: ISODate, compare: boolean): Forec
           method: overallCurve.method,
           provisional: overallCurve.provisional,
           pairs: overallCurve.pairs,
-          targetMarks: examCurve!.toMarks(target),
-          marksPerPointAtTarget: examCurve!.marksPerPoint(target),
+          targetMarks: overallCurve.toMarks(target),
+          marksPerPointAtTarget: overallCurve.marksPerPoint(target),
         }
       : undefined,
     level,
     trend,
     forecast,
+    examTargetMarks: referenceCurve.toMarks(target),
     scenarios,
     constraint: { established: diagnosis.established, top, note: diagnosis.note },
     cleanPaper,
@@ -1218,8 +1377,8 @@ function whatChanged(state: AppState, today: ISODate, now: Forecast, marked: Cle
     const b = now.level.percentile;
     lines.push(
       a !== undefined && b !== undefined
-        ? `Current level moved from ${fmt(a)} to ${fmt(b)} percentile (${signed(now.level.marks - before.level.marks)} marks).`
-        : `Current level moved from ${fmt(before.level.marks)} to ${fmt(now.level.marks)} marks.`,
+        ? `Current level moved from ${fmt(a)} to ${fmt(b)} percentile.`
+        : `Current level moved from ${fmt(before.level.marks ?? 0)} to ${fmt(now.level.marks ?? 0)} marks.`,
     );
   }
   const p0 = before.forecast?.percentile?.p50;

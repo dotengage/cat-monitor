@@ -145,7 +145,7 @@ describe('Scenario 9: remaining work exceeds capacity', () => {
     // Three mocks with marks and percentile, so the forecast has a status to worsen.
     const state = makeState({
       mocks: [60, 62, 64].map((m, i) =>
-        makeMock({ id: `m${i}`, date: addDays(TODAY, -14 + i * 7), overallScore: m, overallPercentile: 68 + i * 2 }),
+        makeMock({ id: `m${i}`, date: addDays(TODAY, -14 + i * 7), overallScore: m, overallPercentile: 89 + i }),
       ),
     });
     state.profile.weekdayHours = { min: 0.25, normal: 0.5, max: 1 };

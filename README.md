@@ -49,7 +49,7 @@ Sample data carries a `demo` flag. Sync will not run while it is set, and the sy
 | Area | Behaviour |
 | --- | --- |
 | **Onboarding** | Collects goal, exam date, commitments, realistic availability, energy profile and any existing mock data before generating anything. |
-| **Forecast** | Works in marks, weights recent mocks, tests the trend for significance, finds where your next marks are, and reads exam day on the real CAT's marks-to-percentile scale as an off day / likely / great day range. Status is written to encourage: *On track*, *Within reach*, *Closing the gap*, *Building up*. |
+| **Forecast** | Works in percentile, because marks are not comparable from one mock to the next. Weights recent mocks, tests the trend for significance, finds the section to work on, and gives exam day as an off day / likely / great day range. Status is written to encourage: *On track*, *Within reach*, *Closing the gap*, *Building up*. |
 | **Capacity model** | `base × energy × commitments × learned realism`, then 20–30% buffer held back. Every factor is shown and configurable. |
 | **Weekly planning** | 3–5 outcomes and a small number of specific, startable tasks that fit inside planned capacity. |
 | **Daily planning** | 1–2 must-do, 1–2 should-do, 1 optional, plus visible unallocated buffer. No hourly timetable. |
@@ -235,7 +235,7 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 
 ## How the CAT tracker works
 
-**Sections.** Each section's readiness is its recency-weighted level from full mocks, converted to section percentile through a curve fitted to your own section marks and percentiles, with the latest percentile, the average of the last five, a significance-tested trend, an exam-day range, one target attempt band and one accuracy floor. Topic coverage and sets solved are deliberately not part of it: they are inputs to planning, not measures of readiness.
+**Sections.** Each section is read from its own recorded percentiles, the same way as the overall: the latest percentile, the average of the last five, a significance-tested trend, an exam-day range, one target attempt band and one accuracy floor. Topic coverage and sets solved are deliberately not part of it: they are inputs to planning, not measures of readiness.
 
 **Topics.** ~40 seeded topics with an exam weight (1–5) and an hours-to-competence estimate, each moving through `not-started → learning → practised → strong` (or `skipped`). Topic status drives the remaining-workload projection, and is edited from Goals.
 
@@ -246,12 +246,12 @@ Habits and tasks are kept apart on purpose: tasks are specific and change weekly
 **The forecast** (`src/engine/forecast/`) follows a written methodology, step by step:
 
 1. **Hygiene first.** A blank field is missing, never zero: the mock form stores a blank percentile as `0`, and averaging those would invent collapses that never happened. Sectionals are kept out of every full-mock statistic and used only as a cross-check.
-2. **Marks, not percentiles.** Percentile is compressed near the top, so averaging it distorts both level and trend. All arithmetic is in marks; a curve fitted to your own (marks, percentile) pairs converts back at the end - a logistic once there are five pairs, a provisional logit-space interpolation before that. It also tells you how many marks one more percentile point costs at your level.
-3. **Current level** is a recency-weighted mean of marks (21-day half-life) with a one-SD band. Never the latest mock.
-4. **Trend** is a weighted regression with a 90% interval: `RISING` or `FALLING` only when the interval excludes zero; otherwise `FLAT` or `VOLATILE` by the spread of the last five. Block averages are reported alongside, and lead when they rise but the regression cannot confirm it. Under six mocks it is labelled directional.
-5. **Where your next marks are** is the section with the highest variance share x ceiling gap, never the lowest section in the last mock, and is classified as a *consistency* or a *capability* gap because they need opposite remedies. Not named from fewer than three mocks.
-6. **Exam day** is 10,000 papers resampled as whole mocks (so a weak VARC day and a weak QA day stay the same day). With a significant trend, older papers are first brought up to today's level along it (at most 1.5 marks a week), and forward drift is capped the same way. Reported as off day / likely / great day with the conditions for each. Guardrails: the likely value never exceeds your demonstrated best unless marks are significantly rising; under five mocks the band is widened; and **an off day is never more than 6 percentile points below the likely one**: the exam is one prepared sitting, not a run of weekly mocks with their off weeks.
-6b. **The real exam's scale.** Mock providers set harder papers to stronger fields, so their percentiles understate exam day. Exam-day marks are read through a blend of your own mocks' curve and a reference curve for the actual CAT (about 55 marks for the 90th percentile, 65 for 93 to 95, 75 for 97, high 80s for 99). Inside the range your mocks cover the two are weighted evenly; above your best paper your own curve is only extrapolating, so the real exam's takes over across the next 10 marks. Current level stays on your mocks' own scale.
+2. **Percentile, not marks.** Marks are not comparable between mocks: a hard paper's 40 can be an easy paper's 60, at the same percentile, and a forecast worked in marks inherits every provider's difficulty. So the level, the trend and exam day are all worked from recorded percentiles. The arithmetic is done on the log-odds of each percentile, the scale on which a point near the top is properly harder to gain than one in the middle; results are converted back to percentile. Marks are used only where they are comparable: a section's own attempt pattern, and as a fallback for mocks recorded without any percentile.
+3. **Current level** is the last five recorded percentiles, averaged on that scale with a gentle lean towards the latest (21-day half-life). For weekly mocks it is all but the plain average of the last five. Never the latest mock alone.
+4. **Trend** is a weighted regression of percentile with a 90% interval: `RISING` or `FALLING` only when the interval excludes zero; otherwise `FLAT` or `VOLATILE` by the spread of the last five. Reported in percentile points a week. Block averages are reported alongside, and lead when they rise but the regression cannot confirm it. Under six mocks it is labelled directional.
+5. **The section to work on** is the one with the highest variance share x ceiling gap, measured in section percentile where recorded, never simply the lowest section in the last mock. It is classified as a *consistency* or a *capability* gap because they need opposite remedies. Not named from fewer than three mocks.
+6. **Exam day** is 10,000 draws from your last five papers. With a significant trend, each is first brought up (or down) to today's level, and the trend is carried forward to the exam; both are capped at about 0.6 points a week near the 90th percentile, because no climb continues at its best rate. Then mock-to-exam variation is added: exam day is a different paper sat by a different field. So a steady 91 forecasts about 91, a climb towards it a little more, a slide a little less. Reported as off day / likely / great day. Guardrails: the likely value never exceeds your best recent percentile unless you are significantly rising; under five recorded percentiles the band is widened; and **an off day is never more than 6 percentile points below the likely one**. The chance of your target is the share of the draws that reach it.
+6b. **Marks on the actual CAT.** Alongside each percentile, the marks the real exam asks for it, from typical recent years: about 55 marks for the 90th percentile, 65 for 93 to 95, 75 for 97 and the high 80s for 99. This is guidance about the exam, never an input to the forecast.
 7. **Status** is a rule on the gap between target and likely percentile (1 / 4 / 8 points), shown as *On track*, *Within reach*, *Closing the gap* or *Building up*, with how many points there are to go.
 8. **Notes from mock analysis** are tagged into eight behaviour categories behind the scenes. Topic work is recommended only when concept gaps are among the top two.
 
@@ -522,7 +522,7 @@ Everything CAT-specific lives in [`src/config/catConfig.ts`](src/config/catConfi
 npm test
 ```
 
-460 tests across 31 files. The planning engine is pure, so the scenarios are exercised directly:
+467 tests across 31 files. The planning engine is pure, so the scenarios are exercised directly:
 
 | Scenario | Expected behaviour | Covered in |
 | --- | --- | --- |
